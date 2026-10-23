@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>世界推演回放</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand">世界推演 · 回放</div>
+  <label class="runsel">演化 <select id="runSelect"></select></label>
+  <div id="status" class="status"></div>
+  <div class="spacer"></div>
+  <button id="btnParams" class="ghost">参数 / 新建演化</button>
+  <a href="/console.html" class="ghost btnlink">控制台</a>
+  <span id="langSlot"></span>
+</header>
+<div id="main">
+  <aside id="left">
+    <section>
+      <h3>图层</h3>
+      <div id="layerList"></div>
+    </section>
+    <section>
+      <h3>叠加</h3>
+      <label class="chk"><input type="checkbox" id="optShade" checked> 地形晕渲</label>
+      <label class="chk"><input type="checkbox" id="optBorders" checked> 边界线</label>
+      <label class="chk"><input type="checkbox" id="optRivers"> 大河</label>
+      <label class="chk"><input type="checkbox" id="optLabels" checked> 政权名称</label>
+    </section>
+  </aside>
+  <div id="center">
+    <canvas id="map"></canvas>
+    <div id="legend"></div>
+    <div id="layerTitle"></div>
+    <div id="tooltip" hidden></div>
+    <div id="loading">加载中…</div>
+  </div>
+  <aside id="right" hidden>
+    <div class="rhead"><span id="inspTitle">格子详情</span><button id="inspClose" class="ghost" title="关闭 (Esc)">✕</button></div>
+    <div id="inspBody"></div>
+  </aside>
+</div>
+<footer id="bottom">
+  <div class="controls">
+    <button id="btnBack" title="后退 5 年">⏮</button>
+    <button id="btnPlay" title="播放/暂停 (空格)">▶</button>
+    <button id="btnFwd" title="前进 5 年">⏭</button>
+    <select id="speed" title="播放速度">
+      <option value="2">慢</option>
+      <option value="6" selected>中</option>
+      <option value="15">快</option>
+      <option value="30">极快</option>
+    </select>
+    <div id="yearLabel">—</div>
+  </div>
+  <div class="timeline">
+    <input type="range" id="slider" min="0" max="0" step="5" value="0">
+    <canvas id="charts"></canvas>
+  </div>
+  <div id="events"></div>
+</footer>
+<dialog id="paramDlg">
+  <form method="dialog">
+    <h2>演化参数</h2>
+    <p class="hint">参数在演化开始后固定，以保证回放可复现。修改后点"开始新演化"，会在后台计算，时间轴随计算进度延长。</p>
+    <div id="paramForm"></div>
+    <div class="dlgBtns">
+      <button value="cancel" class="ghost">关闭</button>
+      <button id="btnStop" type="button" class="ghost">停止当前演化</button>
+      <button id="btnNewRun" type="button">开始新演化</button>
+    </div>
+  </form>
+</dialog>
+<script type="module" src="app.js"></script>
+</body>
+</html>

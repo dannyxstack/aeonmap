@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>世界推演控制台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="console">
+<header>
+  <div class="brand">世界推演控制台</div>
+  <div class="acct" id="acct">加载中…</div>
+  <div class="spacer"></div>
+  <a class="btnlink" href="/index.html">回放</a>
+  <a class="btnlink" href="/v1/openapi.yaml" target="_blank">接口文档</a>
+  <button class="ghost" id="btnLogout">切换密钥</button>
+  <span id="langSlot"></span>
+</header>
+<main>
+  <h2>世界 <span class="muted">上传高程图或草图，自动推演气候、水文、资源与承载力</span></h2>
+  <div class="grid" id="worlds"></div>
+
+  <h2>上传地图</h2>
+  <div class="panel">
+    <form id="upForm" class="form">
+      <label>地图文件</label><input type="file" name="file" id="upFile" accept=".png,.jpg,.jpeg,.tif,.tiff" required>
+      <label class="aiRow" hidden>AI 识图</label>
+      <div class="aiRow" hidden style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="ghost" id="btnAnalyze">识别并预填</button><span class="muted" id="aiMsg"></span></div>
+      <div class="full aiResult" id="aiResult" hidden></div>
+      <label>类型</label>
+      <select name="input" id="upInput">
+        <option value="grayscale">灰度高程图(8/16 位 PNG、TIFF/GeoTIFF)</option>
+        <option value="sketch">手绘草图(按颜色识别)</option>
+        <option value="hypsometric">分层设色地形图(需提供色带)</option>
+      </select>
+      <p class="hint muted" id="upHint"></p>
+      <label>名称</label><input name="name" placeholder="例如：南方大陆">
+      <label>经纬度范围</label>
+      <div class="row4"><input name="west" placeholder="西 经度" type="number" step="any"><input name="east" placeholder="东 经度" type="number" step="any">
+        <input name="south" placeholder="南 纬度" type="number" step="any"><input name="north" placeholder="北 纬度" type="number" step="any"></div>
+      <p class="hint muted">等距经纬度投影。南纬、西经用负数。GeoTIFF 可留空，自动读取。</p>
+      <label id="elevLabel">高程映射</label>
+      <div class="row4" id="elevRow"><input name="emin" placeholder="最低海拔(m)" type="number" value="-500"><input name="emax" placeholder="最高海拔(m)" type="number" value="5000">
+        <input name="sea" placeholder="海平面(m)" type="number" value="0"><select name="enc"><option value="">按灰度线性映射</option><option value="meters">像素值即米(浮点 TIFF)</option></select></div>
+      <label class="bandRow" hidden>色带识别</label>
+      <div class="bandRow" hidden style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="ghost" id="btnBands">自动识别色带</button><span class="muted" id="bandMsg"></span></div>
+      <div class="full aiResult bandResult" id="bandResult" hidden></div>
+      <label class="legendRow" hidden>色带 JSON</label><textarea class="legendRow" name="legend" hidden placeholder='[["#145a3c", 0], ["#d7da7a", 500], ["#7d2a0f", 2000], ["#ffffff", 5000]]'></textarea>
+      <label class="legendRow" hidden>水体颜色 JSON</label><textarea class="legendRow" name="water" hidden rows="1" placeholder='可留空：蓝色自动算作水。海或湖不是蓝色时填写，如 ["#ffffff"]；透明像素也算作水'></textarea>
+      <label class="paletteRow" hidden>草图配色 JSON</label><textarea class="paletteRow" name="palette" hidden placeholder='可留空，按上面的颜色约定识别；自定义如 [["#4678d2", "sea"], ["#f6f1e4", "land"], ["#82502a", "mountain"]]'></textarea>
+      <p class="hint muted paletteRow" hidden>类别：sea 海/湖、river 河流、mountain 山脉、highland 高地丘陵、land 平原。每个像素归入颜色最接近的一类。</p>
+      <div class="full" style="display:flex;gap:10px;align-items:center"><button type="submit">上传并预处理</button><span id="upMsg" class="muted"></span></div>
+    </form>
+  </div>
+
+  <h2>任务 <span class="muted">实时更新；完成后可打开回放或下载导出包</span></h2>
+  <div class="panel"><table class="jobs" id="jobs"><thead><tr><th>任务</th><th>世界</th><th>状态</th><th>结果</th><th>算力点</th><th></th></tr></thead><tbody></tbody></table></div>
+
+  <h2>账户与接口 <span class="muted">程序调用请使用 Authorization: Bearer 密钥</span></h2>
+  <div class="panel" id="account"></div>
+</main>
+
+<dialog id="simDlg">
+  <form method="dialog" class="form" id="simForm" style="min-width:min(680px,90vw)">
+    <h2 class="full" style="margin:0">新建演化 · <span id="simWorld"></span></h2>
+    <label>年数</label><input name="years" type="number" value="2000" min="100" max="10000">
+    <label>随机种子</label><input name="seed" type="number" value="20261015">
+    <label>超级帝国概率</label><input name="superRate" type="number" step="any" value="0.012"><p class="hint muted">每 5 年随机崛起一个超级帝国的概率；0 关闭</p>
+    <label>约束(可选)</label><textarea name="constraints" placeholder='{"polities":[{"name":"北境王国","capital":[10,52],"region":[[[5,48],[15,48],[15,56],[5,56],[5,48]]]}]}'></textarea>
+    <p class="hint muted">指定政权的首都[经度,纬度]与领土多边形，领土内的土地始终归它所有</p>
+    <label>完成后导出</label><div><label style="color:var(--text)"><input type="checkbox" name="exp" checked style="width:auto"> GeoTIFF、GeoJSON(疆域/道路/城市/河流)、CSV、游戏引擎资源</label></div>
+    <label>回调地址(可选)</label><input name="webhook" placeholder="https://…">
+    <div class="full dlgBtns"><button value="cancel" class="ghost" formnovalidate>取消</button><button id="simGo" value="ok">开始</button></div>
+    <p class="full err" id="simErr"></p>
+  </form>
+</dialog>
+
+<dialog id="expDlg">
+  <form method="dialog" class="form" style="min-width:min(560px,90vw)">
+    <h2 class="full" style="margin:0">导出 · <span id="expRun"></span></h2>
+    <label>年份</label><input name="year" type="number" placeholder="留空 = 最后一年">
+    <label>格式</label><div id="expFmts">
+      <label style="color:var(--text)"><input type="checkbox" value="geotiff" checked style="width:auto"> GeoTIFF</label>
+      <label style="color:var(--text)"><input type="checkbox" value="geojson" checked style="width:auto"> GeoJSON</label>
+      <label style="color:var(--text)"><input type="checkbox" value="csv" checked style="width:auto"> CSV</label>
+      <label style="color:var(--text)"><input type="checkbox" value="engine" checked style="width:auto"> 引擎资源</label></div>
+    <label>引擎高程图边长</label><select name="size"><option>513</option><option selected>1025</option><option>2049</option><option>4097</option></select>
+    <div class="full dlgBtns"><button value="cancel" class="ghost" formnovalidate>取消</button><button value="ok">导出</button></div>
+  </form>
+</dialog>
+<script type="module" src="console.js"></script>
+</body>
+</html>

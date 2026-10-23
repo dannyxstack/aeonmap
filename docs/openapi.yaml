@@ -1,0 +1,419 @@
+openapi: 3.0.3
+info:
+  title: 世界推演引擎 API
+  version: "1.1.0"
+  description: |
+    上传地形(高程图或草图) → 推演气候、水文、资源、人口、政权历史与交通网络 → 以标准格式导出。
+
+    - 认证：`Authorization: Bearer msk_...`(也接受 `X-API-Key` 头；浏览器下载与 WebSocket 可用 `?key=`)
+    - 所有耗时操作都是异步任务：提交后轮询 `GET /v1/jobs/{id}`，或在请求里给 `webhook` 等待回调。
+    - 可复现：同一世界 + 同一引擎版本 + 同样参数/约束/种子 = 同样的历史；重复提交会直接复用已有结果，不再计费。
+    - 计费单位"算力点"：预处理 = 陆地格/1万；演化 = 陆地格×年数/200万；导出 = 1。超出套餐额度返回 402。
+    - 回调签名：`X-Mapsim-Signature: sha256=HMAC_SHA256(webhookSecret, "{X-Mapsim-Timestamp}." + body)`，密钥见 `GET /v1/me`。
+servers:
+  - url: http://127.0.0.1:8765
+security:
+  - bearer: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  schemas:
+    ColorBands:
+      type: object
+      properties:
+        legend: {type: array, description: '陆地各层 [颜色, 海拔] 从低到高，可直接作为 elevation.legend', items: {type: array}}
+        waterColors: {type: array, items: {type: string}, description: 识别为水体的全部颜色}
+        water: {type: array, items: {type: string}, description: '非蓝色的水体颜色(如白色的海)，需作为 elevation.water 提交'}
+        layers:
+          type: array
+          items:
+            type: object
+            properties:
+              color: {type: string}
+              water: {type: boolean}
+              elevation: {type: number}
+              range: {type: array, items: {type: number}, description: 该层海拔区间}
+              source: {type: string, enum: [legend, dem, interp, template]}
+              confidence: {type: number}
+              area: {type: number, description: 面积占比}
+              swatch: {type: boolean, description: 是否在图例中找到对应色块(颜色取自图例)}
+              dem: {type: array, items: {type: number}, description: 参考高程 10%/50%/90% 分位}
+        mode: {type: string, enum: [legend, dem, topology]}
+        confidence: {type: number}
+        chainConsistency: {type: number, description: 邻接关系落在单一链条上的比例；低说明不是分层设色或晕渲很重}
+        direction: {type: string, enum: [coast, legend, color, dem], description: 高低方向的依据(贴海一端为低 / 图例排列 / 配色习惯 / 参考高程)}
+        exact: {type: boolean, description: 精确色(调色板 PNG / 无抗锯齿)}
+        discrete: {type: boolean, description: 平涂分层(否则为连续渐变色带)}
+        droppedColors: {type: array, items: {type: string}, description: 被当作线条/文字/过渡色忽略的颜色}
+        legendDetected: {type: object, description: '图例色块：box、axis(v/h)、swatches[{box,color,layer,value}]、orderAgreement'}
+        registration: {type: object, description: '海岸线配准：iou、iouBefore、refined、bounds'}
+        bounds: {type: object, description: 按海岸线微调后的范围(仅在微调时出现)}
+        preview: {type: string, description: 分类预览 PNG(data URL)}
+        warnings: {type: array, items: {type: string}}
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: {type: string, example: quota_exceeded}
+            message: {type: string}
+    Bounds:
+      type: object
+      required: [west, east, south, north]
+      properties:
+        west: {type: number}
+        east: {type: number}
+        south: {type: number}
+        north: {type: number}
+    World:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [builtin, upload]}
+        input: {type: string, enum: [grayscale, sketch, hypsometric]}
+        bounds: {$ref: '#/components/schemas/Bounds'}
+        status: {type: string, enum: [uploaded, prepping, ready, failed]}
+        landCells: {type: integer}
+        error: {type: string}
+        created: {type: string, format: date-time}
+    Constraints:
+      type: object
+      description: 用户约束：指定政权的首都与领土。region 内的土地始终归该政权所有。
+      properties:
+        polities:
+          type: array
+          items:
+            type: object
+            required: [name, capital]
+            properties:
+              name: {type: string, example: 大秦}
+              capital:
+                type: array
+                items: {type: number}
+                minItems: 2
+                maxItems: 2
+                description: "[经度, 纬度]"
+              region:
+                type: array
+                description: 多边形环列表(第一个为外环)，每个点为 [经度, 纬度]
+                items:
+                  type: array
+                  items:
+                    type: array
+                    items: {type: number}
+              seedRadiusKm: {type: number, description: 没有 region 时，首都周围多远的初始家族归附它(默认 300)}
+    JobRequest:
+      type: object
+      properties:
+        simulate:
+          type: object
+          properties:
+            years: {type: integer, example: 2000}
+            seed: {type: integer, example: 42}
+            params:
+              type: object
+              description: 覆盖演化参数(完整列表与取值范围见 GET /v1/params)
+              additionalProperties: true
+            constraints: {$ref: '#/components/schemas/Constraints'}
+        export:
+          type: object
+          properties:
+            run: {type: string, description: 导出已有演化；不给则导出本任务的演化，都没有时只导出世界静态图层}
+            year: {type: integer, description: 导出年份，不给取最后一年}
+            formats:
+              type: array
+              items: {type: string, enum: [geotiff, geojson, csv, engine]}
+            engineSize: {type: integer, example: 1025, description: 引擎高程图边长(129-4097)}
+        webhook: {type: string, format: uri}
+    Job:
+      type: object
+      properties:
+        id: {type: string}
+        world: {type: string}
+        status: {type: string, enum: [queued, running, succeeded, failed]}
+        stage: {type: string, enum: [prep, simulate, export, done]}
+        progress: {type: number}
+        message: {type: string}
+        units: {type: integer, description: 本任务实际消耗的算力点}
+        error: {type: string}
+        result:
+          type: object
+          properties:
+            runId: {type: string}
+            runReused: {type: boolean}
+            prepCached: {type: boolean}
+            exportId: {type: string}
+            exportUrl: {type: string}
+            engineVersion: {type: string}
+    FeatureCollection:
+      type: object
+      description: GeoJSON FeatureCollection(经纬度坐标)
+paths:
+  /v1/health:
+    get:
+      security: []
+      summary: 健康检查
+      responses: {"200": {description: OK}}
+  /v1/params:
+    get:
+      security: []
+      summary: 演化参数说明(名称、分组、取值范围、默认值)
+      responses: {"200": {description: OK}}
+  /v1/signup:
+    post:
+      security: []
+      summary: 自助注册(需管理员在后台开放)，返回接口密钥(只显示一次)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: {type: string}
+                email: {type: string, format: email}
+      responses:
+        "201": {description: 已注册}
+        "403": {description: 未开放自助注册}
+        "429": {description: 注册过于频繁}
+  /v1/me:
+    get:
+      summary: 当前租户、套餐、本月用量、回调签名密钥
+      responses: {"200": {description: OK}}
+  /v1/usage:
+    get:
+      summary: 本月用量明细
+      responses: {"200": {description: OK}}
+  /v1/worlds:
+    get:
+      summary: 列出世界(自己的 + 公共内置世界)
+      responses: {"200": {description: OK}}
+    post:
+      summary: 上传地图创建世界(自动排队预处理)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, input]
+              properties:
+                file: {type: string, format: binary, description: PNG/JPG/TIFF/GeoTIFF，等距经纬度投影}
+                name: {type: string}
+                input:
+                  type: string
+                  enum: [grayscale, sketch, hypsometric]
+                  description: |
+                    grayscale：灰度/数值高程图(8/16 位 PNG、TIFF；elevation.min/max 给出映射，或 encoding=meters 表示像素值即米)
+                    sketch：手绘草图(蓝=海/湖，青=河流，棕/红/黑=山脉，黄/橙=高地，其余=平原；可用 elevation.palette 自定义)
+                    hypsometric：分层设色地形图(需 elevation.legend：[["#颜色", 海拔], ...])
+                bounds: {type: string, description: 'JSON，如 {"west":-10,"east":40,"south":30,"north":60}；GeoTIFF 可省略'}
+                elevation: {type: string, description: JSON 选项}
+                hints: {type: string, description: JSON 区域气候修正(可选)}
+                webhook: {type: string}
+      responses:
+        "201": {description: 已创建并排队预处理，返回 world 与 job}
+        "400": {description: 参数错误, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        "402": {description: 额度不足}
+  /v1/analyze:
+    post:
+      summary: AI 识图：判断地图类型并读出图例色带、草图配色与经纬度范围(需管理员在后台启用)
+      description: |
+        返回的 input、elevation、bounds 可直接填入 POST /v1/worlds 的同名字段；请让用户确认后再提交。
+        颜色由服务端在模型指出的位置从原图取样，不依赖模型报出的色值。每次调用按管理后台设置扣算力点。
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary, description: PNG/JPG}
+      responses:
+        "200":
+          description: 识图结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: {type: string}
+                  model: {type: string}
+                  input: {type: string, enum: [sketch, hypsometric, grayscale, unknown]}
+                  confidence: {type: number}
+                  elevation: {type: object, description: '如 {"type":"hypsometric","legend":[["#145a3c",-30],...]} 或 {"type":"sketch","palette":[["#4678d2","sea"],...]}'}
+                  bounds: {type: object, description: 从经纬网标注读出的范围；没有标注时省略}
+                  mapBox: {type: array, items: {type: integer}, description: "地图主体在原图中的像素范围 [x0,y0,x1,y1]"}
+                  legendBox: {type: array, items: {type: integer}}
+                  legendStops: {type: array, description: '图例刻度 [{"x","y","elevation_m"}]，x/y 为 0-1000 归一化坐标', items: {type: object}}
+                  bands: {$ref: '#/components/schemas/ColorBands'}
+                  notes: {type: string}
+                  warnings: {type: array, items: {type: string}}
+                  usage: {type: object}
+        "402": {description: 额度不足}
+        "502": {description: 模型调用失败}
+        "503": {description: 未启用 AI 识图}
+  /v1/colorbands:
+    post:
+      summary: 色带自动识别：分层设色图 → 每层颜色与海拔(不调用外部服务、不扣点)
+      description: |
+        1. 颜色聚类 + 邻接拓扑排序：每层只与相邻两层接壤，按边界长度求出从低到高的链，贴海的一端为低；
+           晕渲拆开的同一层、线条、文字、JPG 过渡色会被合并或剔除。
+        2. 参考 DEM 校准(服务端装有 data/refdem/etopo.npz 且提供 bounds 时)：先按海岸线吻合度微调范围，
+           再取相邻两层交界处参考高程的中位数作为分级阈值。
+        3. 图例：自动定位排列整齐的色块，与 stops(AI 读出的刻度)按位置配对。
+        数值来源优先级：图例读数 > 参考高程 > 插值 > 常见分级模板；最后按高低顺序做保序平滑。
+        结果中的 legend 可直接作为 POST /v1/worlds 的 elevation.legend；bounds(若有)是微调后的范围。
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary, description: PNG/JPG}
+                bounds: {type: string, description: 'JSON {"west","east","south","north"}；给了 mapBox 时指地图主体框的范围'}
+                mapBox: {type: string, description: 'JSON [x0,y0,x1,y1]，原图像素'}
+                legendBox: {type: string, description: 'JSON [x0,y0,x1,y1]，原图像素；分析地图时排除'}
+                stops: {type: string, description: 'JSON [{"x","y","elevation_m"}]，图例刻度，x/y 为 0-1000 归一化坐标'}
+                refine: {type: string, enum: ["true", "false"], description: 是否按海岸线微调范围(默认 true)}
+      responses:
+        "200": {description: 识别结果, content: {application/json: {schema: {$ref: '#/components/schemas/ColorBands'}}}}
+        "422": {description: 识别失败(例如图上没有陆地颜色)}
+  /v1/worlds/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: 世界详情
+      responses: {"200": {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/World'}}}}}
+    delete:
+      summary: 删除自己的世界(连同其演化)
+      responses: {"200": {description: OK}}
+  /v1/worlds/{id}/manifest:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 格子数据说明(网格、字段、单位、配色、帧字段)
+      responses: {"200": {description: OK}}
+  /v1/worlds/{id}/cells.bin:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 全部静态字段的二进制数据(偏移见 manifest)
+      responses: {"200": {description: OK}}
+  /v1/worlds/{id}/layers/{name}:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string, example: koppen.tif}}
+      summary: 单个静态图层的 GeoTIFF(elev、t_ann、p_ann、koppen、landcover、density、mode、discharge 等)
+      responses: {"200": {description: GeoTIFF}}
+  /v1/worlds/{id}/rivers.geojson:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 河道折线
+      responses: {"200": {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/FeatureCollection'}}}}}
+  /v1/worlds/{id}/jobs:
+    post:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 提交管线任务(预处理 → 演化 → 导出)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobRequest'}
+            example:
+              simulate:
+                years: 2000
+                seed: 42
+                params: {superRate: 0.01}
+                constraints:
+                  polities:
+                    - name: 北境王国
+                      capital: [10, 52]
+                      region: [[[5, 48], [15, 48], [15, 56], [5, 56], [5, 48]]]
+              export: {formats: [geotiff, geojson, csv, engine], engineSize: 1025}
+              webhook: https://example.com/hooks/mapsim
+      responses:
+        "202": {description: 已排队, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}
+        "400": {description: 参数错误}
+        "402": {description: 额度不足}
+  /v1/jobs:
+    get:
+      summary: 最近 100 个任务
+      responses: {"200": {description: OK}}
+  /v1/jobs/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: 任务状态
+      responses: {"200": {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}}
+    delete:
+      summary: 取消正在演化的任务
+      responses: {"202": {description: 取消中}, "409": {description: 不可取消}}
+  /v1/runs:
+    get:
+      parameters: [{name: world, in: query, schema: {type: string}}]
+      summary: 列出演化
+      responses: {"200": {description: OK}}
+  /v1/runs/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: 演化元数据(参数、约束、复现键、引擎版本)
+      responses: {"200": {description: OK}}
+    delete:
+      summary: 删除自己的演化
+      responses: {"200": {description: OK}}
+  /v1/runs/{id}/metrics:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 逐年指标(人口、政权数、最大政权占比、战争、吞并…)
+      responses: {"200": {description: OK}}
+  /v1/runs/{id}/events:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: from, in: query, schema: {type: integer}}
+        - {name: to, in: query, schema: {type: integer}}
+      summary: 政权事件(annex 吞并、cede 割地、repel 击退、succession 继承危机、super_rise/super_fall 超级帝国)
+      responses: {"200": {description: OK}}
+  /v1/runs/{id}/polities:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 所有出现过的政权(名称、建立/灭亡年份、峰值规模、超级帝国鼎盛期)
+      responses: {"200": {description: OK}}
+  /v1/runs/{id}/frames/{year}:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: year, in: path, required: true, schema: {type: integer}}
+      summary: 某年的回放帧(二进制，字段见 manifest.frameFields)
+      responses: {"200": {description: OK}}
+  /v1/runs/{id}/borders:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: year, in: query, schema: {type: integer}}
+      summary: 某年的政权疆域多边形
+      responses: {"200": {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/FeatureCollection'}}}}}
+  /v1/runs/{id}/roads:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: year, in: query, schema: {type: integer}}
+        - {name: layer, in: query, schema: {type: string, enum: [roads, cities]}}
+        - {name: cities, in: query, schema: {type: integer, description: 城市数上限(默认 200)}}
+      summary: 某年的交通网络(道路/近岸航线分 3 级)或城市
+      responses: {"200": {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/FeatureCollection'}}}}}
+  /v1/runs/{id}/inspect:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: year, in: query, required: true, schema: {type: integer}}
+        - {name: cell, in: query, required: true, schema: {type: integer}}
+      summary: 某年某格的家族明细与统治链(从检查点重算，可能需要数秒)
+      responses: {"200": {description: OK}}
+  /v1/exports/{id}:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 下载导出包(zip：world/ 静态 GeoTIFF + rivers；run/ 人口、政权、疆域、道路、城市、指标、事件；engine/ 高程图与混合贴图；README.md)
+      responses: {"200": {description: application/zip}}

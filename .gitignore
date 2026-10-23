@@ -1,0 +1,11 @@
+.venv/
+cache/
+runs/
+__pycache__/
+*.pyc
+/server/mapsim
+/mapsim
+data/
+prep/tests/fixtures/
+.claude/
+*.whl

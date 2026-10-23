@@ -1,0 +1,11 @@
+.git
+.claude
+cache
+runs
+mapsim
+server/mapsim
+**/__pycache__
+*.pyc
+docs/*.md
+data
+tests
