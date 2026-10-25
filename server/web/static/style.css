@@ -203,3 +203,21 @@ table.plans input { background: var(--panel2); border: 1px solid var(--line); bo
 [hidden] { display: none !important; }
 .langsel { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-size: 12px; cursor: pointer; }
 .langsel:hover { color: var(--text); }
+
+/* 环境分析模式(未演化)：没有时间轴 */
+body.worldmode #bottom { display: none; }
+body.worldmode #optBorders, body.worldmode #optLabels { display: none; }
+body.worldmode label.chk:has(#optBorders), body.worldmode label.chk:has(#optLabels) { display: none; }
+#overview { font-size: 12px; }
+#overview .ovk { margin: 2px 0; }
+#overview .ovh { color: var(--muted); font-size: 11px; margin: 10px 0 3px; }
+#overview .ovrow { display: grid; grid-template-columns: 1fr 44px 42px; gap: 4px; align-items: center; margin: 1px 0; }
+#overview .ovrow > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#overview .ovbar { height: 5px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+#overview .ovbar i { display: block; height: 100%; }
+#overview .n { text-align: right; color: var(--muted); }
+#overview .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+#overview .ovex a { display: block; color: var(--text); }
+svg.climo { width: 100%; height: auto; font-size: 10px; fill: var(--muted); }
+a.btnlink.primary { background: var(--accent); border-color: var(--accent); color: #1a1408; font-weight: 600; }
+a.btnlink.primary:hover { filter: brightness(1.08); background: var(--accent); }

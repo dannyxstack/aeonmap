@@ -304,6 +304,49 @@ paths:
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       summary: 全部静态字段的二进制数据(偏移见 manifest)
       responses: {"200": {description: OK}}
+  /v1/worlds/{id}/stats:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 环境分析概况(不需要演化)：气候带、地表覆盖、主导生计的面积占比与潜在人口，海拔/年均温/年降水分布，极值点
+      responses:
+        "200":
+          description: 概况
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  landCells: {type: integer}
+                  landAreaKm2: {type: number}
+                  potentialPop: {type: number, description: 最优生计方式下的潜在人口合计}
+                  means: {type: object, description: 面积加权平均 elev、t_ann、t_cold、t_warm、p_ann}
+                  koppen: {type: array, description: '[{key,label,color,cells,areaKm2,share}] 按面积降序', items: {type: object}}
+                  landcover: {type: array, items: {type: object}}
+                  modes: {type: array, description: 同上，另含 potentialPop, items: {type: object}}
+                  capacity: {type: object, description: '各 cap_* 字段 × 面积：全部用于该生计方式时可养活的人口'}
+                  elevBins: {type: array, description: '[{lo,hi,share}]，null 表示开区间', items: {type: object}}
+                  tempBins: {type: array, items: {type: object}}
+                  precipBins: {type: array, items: {type: object}}
+                  extremes: {type: object, description: 'highest/warmest/coldest/wettest/driest：{lon,lat,cell,value}'}
+                  monthly: {type: boolean, description: '是否有逐月气候数据(旧版预处理没有，提交空任务 {} 即可更新，不扣点)'}
+        "409": {description: 世界尚未完成预处理}
+  /v1/worlds/{id}/point:
+    get:
+      summary: 单点环境档案：所有静态字段(分类字段附标签)与 12 个月气温/降水
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: lon, in: query, schema: {type: number}}
+        - {name: lat, in: query, schema: {type: number}}
+        - {name: cell, in: query, schema: {type: integer}, description: 格子下标(行优先，北→南、西→东)，可代替 lon/lat}
+      responses:
+        "200":
+          description: '{cell, lon, lat, land, fields: {id: {name,unit,group,value,label?}}, monthly?: {t: [12], p: [12]}}'
+        "400": {description: 缺少坐标或坐标不在地图范围内}
+  /v1/worlds/{id}/monthly.bin:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 逐月气候原始数据：int16 小端 [24][ny][nx]，0-11 层为 1-12 月气温×10(°C)，12-23 层为降水(mm)；说明见 manifest.monthly
+      responses: {"200": {description: 二进制}, "404": {description: 旧版预处理没有该文件}}
   /v1/worlds/{id}/layers/{name}:
     get:
       parameters:
@@ -341,6 +384,7 @@ paths:
         "202": {description: 已排队, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}
         "400": {description: 参数错误}
         "402": {description: 额度不足}
+        "403": {description: 套餐只含环境分析(noSimulate)，不能发起演化(code plan_restricted)}
   /v1/jobs:
     get:
       summary: 最近 100 个任务

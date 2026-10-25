@@ -1,5 +1,6 @@
 """汇总到模拟格(默认0.5°)并输出 manifest.json + cells.bin。"""
 import json
+import warnings
 
 import numpy as np
 
@@ -113,6 +114,35 @@ def aggregate(grid, terr, res, factor):
     lat = grid.lat[sl[0]].reshape(Ny, factor).mean(1)
     lon = grid.lon[sl[1]].reshape(Nx, factor).mean(1)
     return out, sim_land, lon, lat
+
+
+def aggregate_monthly(grid, terr, Tm, Pm, factor, sim_land):
+    """逐月气温(°C)与降水(mm/月)汇总到模拟格(陆地子格平均)，返回 [24, Ny, Nx]：前 12 个月气温、后 12 个月降水。"""
+    land = terr["land"]
+    ny, nx = grid.shape
+    Ny, Nx = ny // factor, nx // factor
+    sl = (slice(0, Ny * factor), slice(0, Nx * factor))
+
+    def blocks(a):
+        return a[sl].reshape(Ny, factor, Nx, factor).transpose(0, 2, 1, 3).reshape(Ny, Nx, -1)
+
+    L = blocks(land)
+    out = np.zeros((24, Ny, Nx))
+    for k, a in enumerate(list(Tm) + list(Pm)):
+        lv = np.where(L, blocks(a.astype(float)), np.nan)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # 全是海的块
+            out[k] = np.where(sim_land, np.nan_to_num(np.nanmean(lv, -1)), 0)
+    return out
+
+
+def write_monthly(out_dir, monthly):
+    """monthly.bin：int16 小端 [24][ny][nx]，前 12 层为气温×10(°C)，后 12 层为降水(mm/月)。"""
+    q = np.concatenate([np.round(monthly[:12] * 10), np.round(np.clip(monthly[12:], 0, 32767))])
+    q = np.clip(q, -32768, 32767).astype("<i2")
+    q.tofile(out_dir / "monthly.bin")
+    return {"file": "monthly.bin", "dtype": "i16", "layers": 24,
+            "layout": "[24][ny][nx]：0-11 为 1-12 月气温×10(°C)，12-23 为 1-12 月降水(mm)", "tScale": 0.1, "pScale": 1}
 
 
 def write(out_dir, grid, sim_res, out, sim_land, lon, lat, meta_extra):

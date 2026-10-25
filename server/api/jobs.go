@@ -96,6 +96,9 @@ func (r *Runner) Submit(t *platform.Tenant, worldID string, req *JobRequest) (*p
 		return nil, fmt.Errorf("世界 %s 不存在", worldID)
 	}
 	plan := r.P.PlanOf(t)
+	if req.Simulate != nil && plan.NoSimulate {
+		return nil, &planError{fmt.Errorf("套餐 %s 只包含环境分析(气候、水文、资源)，不能发起历史演化", plan.Name)}
+	}
 	if req.Simulate != nil {
 		years := req.Simulate.Years
 		if years == 0 {
@@ -128,6 +131,8 @@ func (r *Runner) Submit(t *platform.Tenant, worldID string, req *JobRequest) (*p
 }
 
 type quotaError struct{ error }
+
+type planError struct{ error }
 
 // 算力点(系数可在管理后台配置)：预处理 = 陆地格/系数；演化 = 陆地格×年数/系数；导出 = 固定点数。
 func (r *Runner) prepUnits(land int) int {
@@ -247,7 +252,8 @@ func (r *Runner) execute(ctx context.Context, j *platform.Job, req *JobRequest) 
 	if !ok {
 		return res, fmt.Errorf("世界不存在")
 	}
-	// 1. 预处理(有缓存)
+	// 1. 预处理(有缓存)。已预处理过、因程序升级而重算的不扣点
+	firstPrep := w.PrepKey == ""
 	r.stage(j, "prep", 0, "地形与气候预处理")
 	cached, err := r.EnsurePrepped(ctx, w, func(p prep.Progress) {
 		r.stage(j, "prep", p.Progress*0.99, p.Stage+" "+p.Message)
@@ -257,7 +263,7 @@ func (r *Runner) execute(ctx context.Context, j *platform.Job, req *JobRequest) 
 	}
 	w, _ = r.P.World(j.World)
 	res.PrepCached = cached
-	if !cached {
+	if !cached && firstPrep {
 		u := r.prepUnits(w.LandCells)
 		j.Units += u
 		r.P.Charge(j.Tenant, j.ID, "prep", u)

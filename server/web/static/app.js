@@ -5,6 +5,7 @@ import { lutCss, polityColor } from './colors.js';
 import { t, tr, EN, mountLang, fmtNum as fmt, fmtPop } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtYear = (y) => t('第 {0} 年', y);
 const paren = (s) => (EN ? ` (${s})` : `（${s}）`);
 
@@ -178,7 +179,8 @@ function renderLayerList() {
     const items = groups.get(g);
     if (!items) continue;
     const el = document.createElement('div');
-    el.className = 'lgroup' + (['综合', '政治(第5层)'].includes(g) ? ' open' : '');
+    const open = S.worldMode ? ['气候', '承载(第2层)'] : ['综合', '政治(第5层)'];
+    el.className = 'lgroup' + (open.includes(g) ? ' open' : '');
     el.innerHTML = `<div class="gname">${t(g)}</div><div class="items"></div>`;
     el.querySelector('.gname').onclick = () => el.classList.toggle('open');
     for (const l of items) {
@@ -312,7 +314,7 @@ function tooltipHTML(i) {
   secs.forEach((s, k) => {
     h += k === 0 ? `<div class="sec main"><div class="t">${s.t}</div>${s.full}</div>` : `<div class="sec"><div class="one">${s.s}${EN ? ': ' : '：'}${s.one}</div></div>`;
   });
-  h += `<div class="sec muted">${t('点击查看家族明细与统治链')}</div>`;
+  h += `<div class="sec muted">${S.worldMode ? t('点击查看气候图与环境档案') : t('点击查看家族明细与统治链')}</div>`;
   return h;
 }
 
@@ -331,6 +333,7 @@ function showTooltip(i) {
 
 // ---------------- 详情面板 ----------------
 async function inspect(cell) {
+  if (S.worldMode) { envInspect(cell); return; }
   if (!S.run) return;
   S.inspectCell = cell;
   $('right').hidden = false;
@@ -357,6 +360,10 @@ async function inspect(cell) {
       <span class="k">${t('首府')}</span><span>${p.capital >= 0 ? `<a href="#" data-cell="${p.capital}">${S.w.lonlat(p.capital).map((v) => fmt(v, 1)).reverse().join('°N ')}°E</a>` : '—'}</span></div></div>`;
   };
   let h = '';
+  await loadMonthly();
+  if (S.inspectCell !== cell) return;
+  const mo = monthlyAt(cell);
+  if (mo) h += `<h4>${t('气候')}</h4>${climograph(mo)}`;
   h += `<h4>${t('政权')}</h4>` + (pol(d.polity, t('影响力第一')) || `<p class="muted">${t('无政权影响')}</p>`) + pol(d.polity2, t('重叠争夺'));
   if (d.hatred && d.hatred.length) {
     h += `<h4>${t('该政权的宿敌')}</h4><div class="card">` + d.hatred.map((x) => `<div><i class="dot" style="background:rgb(${polityColor(x.uid)})"></i>${otherName(x.uid, x.name)} <span class="muted">${t('仇恨')} ${fmt(x.v, 2)}</span></div>`).join('') + '</div>';
@@ -382,6 +389,132 @@ async function inspect(cell) {
     const c = +el.dataset.cell;
     S.map.hover = c; redraw(); inspect(c);
   }));
+}
+
+// ---------------- 环境分析(未演化的世界) ----------------
+async function loadMonthly() {
+  if (S.monthly !== undefined) return S.monthly;
+  S.monthly = null;
+  if (!S.w.m.monthly) return null;
+  try { S.monthly = new Int16Array(await api(`/v1/worlds/${S.worldId}/monthly.bin`)); } catch { S.monthly = null; }
+  return S.monthly;
+}
+
+function monthlyAt(i) {
+  const a = S.monthly, n = S.w.n, md = S.w.m.monthly;
+  if (!a || a.length < 24 * n || !S.w.f.land[i]) return null;
+  const T = [], P = [];
+  for (let k = 0; k < 12; k++) { T.push(a[k * n + i] * md.tScale); P.push(a[(12 + k) * n + i] * md.pScale); }
+  return { T, P };
+}
+
+const MONTHS = EN ? ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'] : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+
+// 气候图：柱 = 月降水(左轴 mm)，线 = 月均温(右轴 °C)
+function climograph(m) {
+  const W = 320, H = 160, pl = 34, pr = 34, pt = 10, pb = 20, iw = W - pl - pr, ih = H - pt - pb;
+  const pmax = Math.max(50, ...m.P) * 1.1;
+  const tmin = Math.min(0, ...m.T) - 2, tmax = Math.max(10, ...m.T) + 2;
+  const bx = (k) => pl + k * iw / 12, cx = (k) => pl + (k + 0.5) * iw / 12;
+  const yp = (v) => pt + ih - (v / pmax) * ih, yt = (v) => pt + ih - ((v - tmin) / (tmax - tmin)) * ih;
+  let g = m.P.map((v, k) => `<rect x="${bx(k) + 2}" y="${yp(v)}" width="${iw / 12 - 4}" height="${pt + ih - yp(v)}" fill="#5aa0d8" opacity="0.85"><title>${MONTHS[k]} ${fmt(v)} mm</title></rect>`).join('');
+  if (tmin < 0 && tmax > 0) g += `<line x1="${pl}" x2="${pl + iw}" y1="${yt(0)}" y2="${yt(0)}" stroke="#e0584a" stroke-dasharray="3 3" opacity="0.5"/>`;
+  g += `<polyline points="${m.T.map((v, k) => `${cx(k)},${yt(v)}`).join(' ')}" fill="none" stroke="#e0584a" stroke-width="2"/>`;
+  g += m.T.map((v, k) => `<circle cx="${cx(k)}" cy="${yt(v)}" r="2.5" fill="#e0584a"><title>${MONTHS[k]} ${fmt(v, 1)}°C</title></circle>`).join('');
+  g += MONTHS.map((n, k) => `<text x="${cx(k)}" y="${H - 6}" text-anchor="middle">${n}</text>`).join('');
+  g += `<text x="${pl - 4}" y="${pt + 8}" text-anchor="end" fill="#5aa0d8">${fmt(pmax)}</text><text x="${pl - 4}" y="${pt + ih}" text-anchor="end" fill="#5aa0d8">0</text>`;
+  g += `<text x="${pl + iw + 4}" y="${pt + 8}" fill="#e0584a">${fmt(tmax)}°</text><text x="${pl + iw + 4}" y="${pt + ih}" fill="#e0584a">${fmt(tmin)}°</text>`;
+  const tAnn = m.T.reduce((a, b) => a + b, 0) / 12, pAnn = m.P.reduce((a, b) => a + b, 0);
+  const iw2 = m.T.indexOf(Math.max(...m.T)), ic = m.T.indexOf(Math.min(...m.T)), id = m.P.indexOf(Math.min(...m.P)), iwet = m.P.indexOf(Math.max(...m.P));
+  const mn = (k) => (EN ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][k] : `${k + 1}月`);
+  return `<svg class="climo" viewBox="0 0 ${W} ${H}">${g}</svg>
+    <div class="muted" style="font-size:11px">${t('年均温 {0}°C · 年降水 {1} mm', fmt(tAnn, 1), fmt(pAnn))}<br>
+    ${t('最暖 {0} {1}°C · 最冷 {2} {3}°C · 最湿 {4} · 最干 {5}', mn(iw2), fmt(m.T[iw2], 1), mn(ic), fmt(m.T[ic], 1), mn(iwet), mn(id))}</div>`;
+}
+
+// 一格的全部静态字段(按分组)
+function envRows(i, ids) {
+  const w = S.w;
+  return ids.filter((id) => w.desc[id]).map((id) => {
+    const d = w.desc[id], v = w.f[id][i];
+    let txt;
+    if (d.style === 'categorical') {
+      const lab = d.labels[v] || '—';
+      txt = id === 'koppen' ? `${lab} ${KOPPEN_DESC[lab] ? t(KOPPEN_DESC[lab]) : ''}` : t(lab);
+    } else {
+      const dig = Math.abs(v) < 10 && v !== 0 ? 2 : 0;
+      txt = `${fmt(v, dig)}${d.unit && d.unit !== '0-1' ? ' ' + t(d.unit) : ''}`;
+    }
+    return `<span class="k" title="${esc(d.desc ? t(d.desc) : '')}">${t(d.name)}</span><span>${txt}</span>`;
+  }).join('');
+}
+
+async function envInspect(cell) {
+  S.inspectCell = cell;
+  $('right').hidden = false;
+  S.map.resize();
+  redraw();
+  const w = S.w, f = w.f;
+  const [lon, lat] = w.lonlat(cell);
+  $('inspTitle').textContent = t('格子 {0}°N {1}°E', fmt(lat, 2), fmt(lon, 2));
+  await loadMonthly();
+  if (S.inspectCell !== cell) return;
+  const mo = monthlyAt(cell);
+  let h = `<h4>${t('气候')}</h4>`;
+  if (mo) h += climograph(mo);
+  else if (!w.m.monthly) h += `<p class="muted">${t('这个世界用旧版程序预处理，没有逐月气候数据。')} <button class="ghost" id="btnReprep">${t('更新预处理')}</button></p>`;
+  h += `<div class="kv">${envRows(cell, ['koppen', 't_ann', 't_cold', 't_warm', 'p_ann', 'p_summer_frac', 'mi', 'gdd5'])}</div>`;
+  h += `<h4>${t('地形与水')}</h4><div class="kv">${envRows(cell, ['elev', 'rugged', 'landcover', 'friction', 'runoff', 'discharge', 'freshwater', 'coast'])}</div>`;
+  const caps = [['旱作', 'cap_dry'], ['水稻', 'cap_rice'], ['灌溉', 'cap_irr'], ['牧草', 'cap_past'], ['驯鹿', 'cap_rein'], ['狩猎采集', 'cap_hg'], ['渔业', 'cap_fish']];
+  const cmax = Math.max(...caps.map(([, k]) => f[k][cell]), 0.01);
+  h += `<h4>${t('资源与承载')}</h4>` + caps.filter(([, k]) => f[k][cell] > 0.005).sort((a, b) => f[b[1]][cell] - f[a[1]][cell])
+    .map(([n, k]) => bar(t(n), f[k][cell], cmax, fmt(f[k][cell], f[k][cell] < 1 ? 2 : 1))).join('');
+  h += `<div class="kv" style="margin-top:6px">${envRows(cell, ['density', 'mode', 'mobility', 'npp'])}</div>`;
+  h += `<p class="muted">${t('承载力单位：人/km²。潜在人口 = 最优生计方式下的承载密度 × 陆地面积 = {0}', t('{0} 人', fmtPop(f.density[cell] * f.area_km2[cell])))}</p>`;
+  $('inspBody').innerHTML = h;
+  const rb = $('btnReprep');
+  if (rb) rb.onclick = refreshPrep;
+}
+
+async function refreshPrep() {
+  try {
+    const j = await api(`/v1/worlds/${S.worldId}/jobs`, { method: 'POST', body: {} });
+    S.prepJob = j.id;
+    setStatus(t('正在更新预处理…'));
+  } catch (e) { alert(e.message); }
+}
+
+async function loadOverview() {
+  let st;
+  try { st = await api(`/v1/worlds/${S.worldId}/stats`); } catch { return; }
+  const pct = (v) => fmt(v * 100, v < 0.1 ? 1 : 0) + '%';
+  const bars = (items, label, n = 6, extra) => items.slice(0, n).map((it) => `<div class="ovrow" title="${esc(label(it))}"><span><i class="sw" style="background:${it.color || '#888'}"></i>${esc(label(it))}</span>
+    <span class="ovbar"><i style="width:${Math.min(100, it.share * 100)}%;background:${it.color || '#888'}"></i></span><span class="n">${extra ? extra(it) : pct(it.share)}</span></div>`).join('');
+  const ex = st.extremes;
+  const exLine = (k, lab, unit) => ex[k] ? `<a href="#" data-cell="${ex[k].cell}">${lab} ${fmt(ex[k].value, unit === '°C' ? 1 : 0)}${unit}</a>` : '';
+  $('overview').innerHTML = `
+    <div class="ovk">${t('陆地 {0} km² · {1} 格', fmt(st.landAreaKm2), fmt(st.landCells))}</div>
+    <div class="ovk">${t('潜在人口 {0}', fmtPop(st.potentialPop))}</div>
+    <div class="ovk muted">${t('平均：年均温 {0}°C · 年降水 {1} mm · 海拔 {2} m', fmt(st.means.t_ann, 1), fmt(st.means.p_ann), fmt(st.means.elev))}</div>
+    <div class="ovh">${t('气候带')}</div>${bars(st.koppen, (it) => `${it.key} ${KOPPEN_DESC[it.key] ? t(KOPPEN_DESC[it.key]) : ''}`)}
+    <div class="ovh">${t('地表覆盖')}</div>${bars(st.landcover, (it) => t(it.label), 5)}
+    <div class="ovh">${t('潜在人口(按主导生计)')}</div>${bars([...st.modes].sort((a, b) => b.potentialPop - a.potentialPop).map((m) => ({ ...m, share: m.potentialPop / Math.max(st.potentialPop, 1) })), (it) => t(it.label), 5, (it) => fmtPop(it.potentialPop))}
+    <div class="ovh">${t('极值')}</div><div class="ovex">${[exLine('highest', t('最高'), ' m'), exLine('warmest', t('最暖'), '°C'), exLine('coldest', t('最冷'), '°C'), exLine('wettest', t('最湿'), ' mm'), exLine('driest', t('最干'), ' mm')].filter(Boolean).join('')}</div>`;
+  $('ovSec').hidden = false;
+  $('overview').querySelectorAll('[data-cell]').forEach((el) => el.addEventListener('click', (e) => {
+    e.preventDefault();
+    const c = +el.dataset.cell;
+    S.map.hover = c; redraw(); inspect(c);
+  }));
+}
+
+function enterWorldMode() {
+  document.body.classList.add('worldmode');
+  $('loading').style.display = 'none';
+  setStatus(t('环境分析 · 尚未演化'));
+  const bp = $('btnParams');
+  bp.textContent = t('开始演化…');
+  if (S.me?.plan?.noSimulate) bp.hidden = true;
 }
 
 // ---------------- 指标曲线与事件 ----------------
@@ -459,16 +592,32 @@ function loadEvents() {
 }
 
 // ---------------- 演化列表与参数 ----------------
-async function refreshRuns(select) {
+// 选择器：环境分析(每个已预处理的世界) + 历史演化。返回 {world: id} 或 {run}
+async function refreshRuns() {
   const [{ runs }, { worlds }] = await Promise.all([api('/v1/runs'), api('/v1/worlds')]);
   S.worldNames = new Map(worlds.map((w) => [w.id, tr(w.name)]));
+  const ready = worlds.filter((w) => w.status === 'ready');
   const sel = $('runSelect');
-  sel.innerHTML = (runs || []).map((r) => `<option value="${r.id}">${S.worldNames.get(r.worldId) || r.worldId} · ${r.id} · ${t('{0}/{1} 年', r.computedUntil, r.params.years)}${r.done ? '' : (r.failed ? t('（失败）') : t('（未完成）'))}</option>`).join('');
-  if (!runs || !runs.length) { $('loading').textContent = t('还没有演化记录：到控制台(/console.html)上传地图或在内置世界上开始演化'); return null; }
-  const want = select || new URL(location.href).searchParams.get('run');
-  const pick = (runs.find((r) => r.id === want) || runs.find((r) => r.done) || runs[0]);
+  const runOpts = (runs || []).map((r) => `<option value="${r.id}">${esc(S.worldNames.get(r.worldId) || r.worldId)} · ${r.id} · ${t('{0}/{1} 年', r.computedUntil, r.params.years)}${r.done ? '' : (r.failed ? t('（失败）') : t('（未完成）'))}</option>`).join('');
+  sel.innerHTML = `<optgroup label="${t('环境分析(未演化)')}">${ready.map((w) => `<option value="w:${w.id}">${esc(S.worldNames.get(w.id))}</option>`).join('')}</optgroup>`
+    + (runOpts ? `<optgroup label="${t('历史演化')}">${runOpts}</optgroup>` : '');
+  const u = new URL(location.href);
+  const wantWorld = u.searchParams.get('world');
+  if (wantWorld) {
+    const w = ready.find((x) => x.id === wantWorld);
+    if (!w) { $('loading').textContent = t('世界不存在或尚未完成预处理'); return null; }
+    sel.value = 'w:' + w.id;
+    return { world: w.id };
+  }
+  const want = u.searchParams.get('run');
+  const pick = (runs || []).find((r) => r.id === want) || (runs || []).find((r) => r.done) || (runs || [])[0];
+  if (!pick) {
+    if (!ready.length) { $('loading').textContent = t('还没有演化记录：到控制台(/console.html)上传地图或在内置世界上开始演化'); return null; }
+    sel.value = 'w:' + ready[0].id; // 没有演化时直接看环境
+    return { world: ready[0].id };
+  }
   sel.value = pick.id;
-  return pick;
+  return { run: pick };
 }
 
 async function loadRunData(id, keepYear = false) {
@@ -485,14 +634,18 @@ async function loadRunData(id, keepYear = false) {
   $('loading').style.display = 'none';
   const u = new URL(location.href);
   u.searchParams.set('run', id);
+  u.searchParams.delete('world');
   history.replaceState(null, '', u.toString());
   await seek(keepYear ? S.year : 0);
 }
 
 // 切换到另一个世界的演化时，整页重新加载(格子数据不同)
-function switchRun(id) {
+function switchRun(v) {
   const u = new URL(location.href);
-  u.searchParams.set('run', id);
+  u.searchParams.delete('run');
+  u.searchParams.delete('world');
+  if (v.startsWith('w:')) u.searchParams.set('world', v.slice(2));
+  else u.searchParams.set('run', v);
   location.href = u.toString();
 }
 
@@ -516,7 +669,7 @@ async function newRun() {
     params[el.dataset.id] = el.dataset.int === 'true' ? parseInt(el.value, 10) : parseFloat(el.value);
   });
   try {
-    const job = await api(`/v1/worlds/${S.meta.worldId}/jobs`, { method: 'POST', body: { simulate: { params } } });
+    const job = await api(`/v1/worlds/${S.worldId}/jobs`, { method: 'POST', body: { simulate: { params } } });
     S.pendingJob = job.id;
     setStatus(t('已提交任务 {0}，等待开始…', job.id));
   } catch (e) { alert(t('启动失败：') + e.message); return; }
@@ -525,6 +678,12 @@ async function newRun() {
 
 // 任务进度推送：自己刚提交的演化一开始就切过去实时观看
 function onJob(j) {
+  if (j.id === S.prepJob) {
+    setStatus(`${t('任务 {0}：', j.id)}${j.status} ${Math.round((j.progress || 0) * 100)}% ${tr(j.message || '')}`);
+    if (j.status === 'succeeded') location.reload();
+    if (j.status === 'failed') { S.prepJob = null; alert(t('任务失败：') + tr(j.error)); }
+    return;
+  }
   if (j.id !== S.pendingJob) return;
   setStatus(`${t('任务 {0}：', j.id)}${j.status} ${j.stage || ''} ${Math.round((j.progress || 0) * 100)}% ${tr(j.message || '')}`);
   if (j.result?.runId && j.result.runId !== S.run) {
@@ -616,21 +775,26 @@ function bindControls() {
 
 async function main() {
   mountLang($('langSlot'));
-  await ensureKey();
+  S.me = await ensureKey();
   const pick = await refreshRuns();
   if (!pick) return;
-  S.w = await World.load(pick.worldId);
+  S.worldMode = !!pick.world;
+  S.worldId = pick.world || pick.run.worldId;
+  S.w = await World.load(S.worldId);
   S.map = new MapView($('map'), S.w);
   S.layers = buildLayers(S.w);
+  if (S.worldMode) S.layers = S.layers.filter((l) => !l.dyn); // 未演化：只有静态图层
   renderLayerList();
   bindMap();
   bindControls();
   let saved = null;
   try { saved = localStorage.getItem('mapsim.layer'); } catch { /* 忽略 */ }
-  S.layer = S.layers.find((l) => l.id === (saved || 'c_pol')) || S.layers[0];
+  S.layer = S.layers.find((l) => l.id === saved) || S.layers.find((l) => l.id === (S.worldMode ? 's_koppen' : 'c_pol')) || S.layers[0];
   await connect();
   selectLayer(S.layer.id);
-  await loadRunData(pick.id);
+  loadOverview();
+  if (S.worldMode) enterWorldMode();
+  else await loadRunData(pick.run.id);
 }
 
 main().catch((e) => { $('loading').textContent = t('加载失败：') + e.message; console.error(e); });

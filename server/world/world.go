@@ -42,6 +42,7 @@ type Manifest struct {
 	Modes    []string        `json:"modes"`
 	Mobility []float64       `json:"mobility"`
 	Summary  json.RawMessage `json:"summary"`
+	Monthly  *MonthlyDesc    `json:"monthly,omitempty"`
 }
 
 // World 是模拟格的只读数据。所有数组按 row-major(北→南, 西→东)，长度 NX*NY。
@@ -182,4 +183,38 @@ func (w *World) StepKm(i, j int) float32 {
 	dx := float64(w.DxKm[i]) * float64(cj-ci)
 	dy := float64(w.DyKm) * float64(rj-ri)
 	return float32(math.Hypot(dx, dy))
+}
+
+// MonthlyDesc：逐月气候文件(monthly.bin，int16 小端 [24][ny][nx]：0-11 月气温×tScale，12-23 月降水×pScale)。
+type MonthlyDesc struct {
+	File   string  `json:"file"`
+	TScale float64 `json:"tScale"`
+	PScale float64 `json:"pScale"`
+}
+
+// ReadMonthly 读取一格的 12 个月气温(°C)与降水(mm)；旧版预处理没有该文件时 ok=false。
+func ReadMonthly(dir string, m Manifest, idx int) (t, p []float64, ok bool) {
+	if m.Monthly == nil || idx < 0 || idx >= m.Grid.NX*m.Grid.NY {
+		return nil, nil, false
+	}
+	f, err := os.Open(filepath.Join(dir, filepath.Base(m.Monthly.File)))
+	if err != nil {
+		return nil, nil, false
+	}
+	defer f.Close()
+	n := int64(m.Grid.NX * m.Grid.NY)
+	t, p = make([]float64, 12), make([]float64, 12)
+	var b [2]byte
+	for k := 0; k < 24; k++ {
+		if _, err := f.ReadAt(b[:], (int64(k)*n+int64(idx))*2); err != nil {
+			return nil, nil, false
+		}
+		v := float64(int16(binary.LittleEndian.Uint16(b[:])))
+		if k < 12 {
+			t[k] = v * m.Monthly.TScale
+		} else {
+			p[k-12] = v * m.Monthly.PScale
+		}
+	}
+	return t, p, true
 }

@@ -248,8 +248,9 @@ function renderSettings() {
   const field = (p, k, type = 'number') => `<input data-plan="${p.name}" data-k="${k}" type="${type}" value="${esc(p[k])}" ${p.name === 'internal' && k === 'name' ? 'readonly' : ''}>`;
   $('tab-settings').innerHTML = `
     <div class="panel"><h2 style="margin-top:0">${t('套餐')} <span class="muted">${t('每月额度 -1 表示不限；月费 > 0 的套餐计为付费用户')}</span></h2>
-      <table class="jobs plans"><thead><tr><th>${t('标识')}</th><th>${t('显示名')}</th><th>${t('月费')}</th><th>${t('每月算力点')}</th><th>${t('单次最长年数')}</th><th>${t('家族上限')}</th><th>${t('上传上限 MB')}</th><th></th></tr></thead>
+      <table class="jobs plans"><thead><tr><th>${t('标识')}</th><th>${t('显示名')}</th><th>${t('月费')}</th><th>${t('每月算力点')}</th><th>${t('单次最长年数')}</th><th>${t('家族上限')}</th><th>${t('上传上限 MB')}</th><th>${t('允许演化')}</th><th></th></tr></thead>
       <tbody>${rows.map((p) => `<tr><td>${field(p, 'name', 'text')}</td><td>${field(p, 'label', 'text')}</td><td>${field(p, 'priceMonthly')}</td><td>${field(p, 'monthlyUnits')}</td><td>${field(p, 'maxYears')}</td><td>${field(p, 'maxFamilies')}</td><td>${field(p, 'maxUploadMB')}</td>
+        <td style="text-align:center"><input type="checkbox" data-plan="${p.name}" data-k="allowSim" ${p.noSimulate ? '' : 'checked'} style="width:auto" title="${t('关闭后该套餐只能做环境分析(气候、水文、资源)，不能发起历史演化')}"></td>
         <td>${p.name !== 'internal' ? `<button class="ghost" data-delplan="${p.name}" style="font-size:11px">${t('删除')}</button>` : ''}</td></tr>`).join('')}</tbody></table>
       <button class="ghost" id="addPlan" style="margin-top:8px">${t('新增套餐')}</button>
     </div>
@@ -283,7 +284,8 @@ async function saveSettings() {
   document.querySelectorAll('#tab-settings [data-plan]').forEach((el) => {
     const old = el.dataset.plan;
     const p = plans[old] || { ...st.plans[old] };
-    p[el.dataset.k] = el.type === 'number' ? Number(el.value) : el.value.trim();
+    if (el.dataset.k === 'allowSim') p.noSimulate = !el.checked;
+    else p[el.dataset.k] = el.type === 'number' ? Number(el.value) : el.value.trim();
     plans[old] = p;
   });
   for (const [old, p] of Object.entries(plans)) { rename[old] = p.name; }

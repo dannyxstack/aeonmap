@@ -106,6 +106,7 @@ def main():
 
     progress("export", 0.0, f"汇总到 {sim_res}° 模拟格")
     out, sim_land, lon, lat = export.aggregate(grid, terr, res, factor)
+    monthly = export.aggregate_monthly(grid, terr, clim["Tm"], clim["Pm"], factor, sim_land)
     pop = out["density"] * out["area_km2"]
     by_mode = {}
     for k, name in enumerate(resources.MODES):
@@ -119,6 +120,7 @@ def main():
     elev_base.tofile(out_dir / "elev_base.bin")
     res["landcover"].astype(np.uint8).tofile(out_dir / "landcover_base.bin")
     (out_dir / "rivers.geojson").write_text(json.dumps(rivers, ensure_ascii=False), encoding="utf-8")
+    monthly_meta = export.write_monthly(out_dir, monthly)
     manifest = export.write(out_dir, grid, sim_res, out, sim_land, lon, lat, {
         "map": cfg.raw.get("name", ""), "prep_version": VERSION, "params": params, "summary": summary,
         "bounds": {"west": cfg.west, "east": cfg.east, "south": cfg.south, "north": cfg.north},
@@ -126,6 +128,7 @@ def main():
         "base": {"nx": int(grid.shape[1]), "ny": int(grid.shape[0]), "west": cfg.west, "north": cfg.north,
                  "res": base_res, "files": {"elev": "elev_base.bin", "landcover": "landcover_base.bin"}},
         "modes": resources.MODES, "mobility": resources.MOBILITY, "landcover": resources.LANDCOVER,
+        "monthly": monthly_meta,
     })
     if not args.no_preview:
         progress("preview", 0.0, "生成预览图")

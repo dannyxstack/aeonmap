@@ -47,6 +47,15 @@ Docker：`docker compose up -d --build`(数据在 `./data`，预处理缓存在 
 - 管理后台：https://aeonmap.novakitestudio.com/admin.html
 - 接口文档：https://aeonmap.novakitestudio.com/v1/openapi.yaml
 
+## 只做环境分析
+
+上传地图后，预处理(气候、水文、资源、潜在人口)就已完成，不需要演化即可查看与使用：
+
+- 控制台世界卡片上的"查看气候与资源"，打开 `/index.html?world=<世界ID>`：只有静态图层，侧栏是全图概况(气候带、地表覆盖、潜在人口、极值点)，点击格子显示气候图(12 个月气温与降水)和环境档案。
+- 接口：`GET /v1/worlds/{id}/stats`(概况)、`GET /v1/worlds/{id}/point?lon=&lat=`(单点档案)、`GET /v1/worlds/{id}/monthly.bin`(逐月气候)、`/layers/{name}.tif`(单个图层)，或提交只有 `export` 的任务导出全部世界图层。
+- 管理后台的套餐表里可以关闭"允许演化"，该套餐的用户只能做环境分析(提交演化返回 403 `plan_restricted`)。
+- 旧版预处理的世界没有逐月气候：提交空任务 `{}` 即可更新(程序升级引起的重新预处理不扣点)。
+
 ## 接口速览
 
 ```bash

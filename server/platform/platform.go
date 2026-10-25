@@ -36,7 +36,8 @@ type Plan struct {
 	MaxYears     int     `json:"maxYears"`
 	MaxFamilies  int     `json:"maxFamilies"`
 	MaxUploadMB  int     `json:"maxUploadMB"`
-	PriceMonthly float64 `json:"priceMonthly"` // >0 视为付费套餐
+	PriceMonthly float64 `json:"priceMonthly"`         // >0 视为付费套餐
+	NoSimulate   bool    `json:"noSimulate,omitempty"` // 只含环境分析(气候、水文、资源)，不能发起历史演化
 }
 
 type KeyRec struct {

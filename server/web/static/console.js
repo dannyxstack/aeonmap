@@ -21,7 +21,7 @@ function renderAcct() {
   const p = S.me.plan;
   const lim = p.monthlyUnits < 0 ? t('不限') : p.monthlyUnits;
   const pct = p.monthlyUnits > 0 ? Math.min(100, S.me.usedThisMonth / p.monthlyUnits * 100) : 0;
-  $('acct').innerHTML = `<span><b>${esc(tr(S.me.name))}</b> · ${t('套餐')} ${esc(p.name)}</span>
+  $('acct').innerHTML = `<span><b>${esc(tr(S.me.name))}</b> · ${t('套餐')} ${esc(p.name)}${p.noSimulate ? ` <span class="muted">(${t('仅环境分析')})</span>` : ''}</span>
     <span>${t('本月 {0} / {1} 点', S.me.usedThisMonth, lim)} <span class="meter"><i style="width:${pct}%"></i></span></span>
     <span>${t('引擎')} ${esc(S.me.engineVersion)}</span>`;
 }
@@ -39,7 +39,8 @@ function renderWorlds() {
       <div class="meta">${INPUT[w.input] || w.input}${w.kind === 'builtin' ? ' · ' + t('内置') : ''} · ${esc(b)}${w.landCells ? ` · ${t('{0} 个陆地格', w.landCells)}` : ''}</div>
       <div class="meta">${t('{0} 次演化', runs.length)}${w.error ? ` · <span class="err">${esc(tr(w.error).slice(0, 160))}</span>` : ''}</div>
       <div class="acts">
-        ${w.status === 'ready' ? `<button data-act="sim" data-id="${w.id}">${t('新建演化')}</button>` : ''}
+        ${w.status === 'ready' ? `<a class="btnlink primary" href="/index.html?world=${w.id}">${t('查看气候与资源')}</a>` : ''}
+        ${w.status === 'ready' && !S.me.plan.noSimulate ? `<button class="ghost" data-act="sim" data-id="${w.id}">${t('新建演化')}</button>` : ''}
         ${done ? `<a class="btnlink" href="/index.html?run=${done.id}">${t('回放最近演化')}</a>` : ''}
         ${w.status === 'ready' ? `<button class="ghost" data-act="expworld" data-id="${w.id}">${t('导出图层')}</button>` : ''}
         ${w.kind !== 'builtin' && w.tenant === S.me.id ? `<button class="ghost" data-act="del" data-id="${w.id}">${t('删除')}</button>` : ''}
@@ -364,7 +365,7 @@ async function upload(ev) {
   $('upMsg').textContent = t('上传中…');
   try {
     const r = await api('/v1/worlds', { method: 'POST', body: fd });
-    $('upMsg').textContent = t('已创建「{0}」，正在预处理…', r.world.name);
+    $('upMsg').textContent = t('已创建「{0}」，正在预处理；完成后点"查看气候与资源"', r.world.name);
     S.worlds.unshift(r.world); S.jobs.set(r.job.id, r.job);
     renderWorlds(); renderJobs();
     f.reset(); onFileChange(); updateUploadForm();

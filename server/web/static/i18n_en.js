@@ -263,6 +263,22 @@ export const EN_DICT = {
   '修改用户': 'Edit user', '吊销密钥': 'Revoke key', '修改配置': 'Edit settings', '取消任务': 'Cancel job', '修改 AI 配置': 'Edit AI settings', '测试 AI 识图': 'Test AI reading',
   '命令行': 'CLI', '后台': 'Admin',
 
+  // ---- 环境分析(未演化的世界) ----
+  '点击查看气候图与环境档案': 'Click for the climate chart and environment profile', '年均温 {0}°C · 年降水 {1} mm': 'Mean {0}°C · precipitation {1} mm/yr',
+  '最暖 {0} {1}°C · 最冷 {2} {3}°C · 最湿 {4} · 最干 {5}': 'Warmest {0} {1}°C · coldest {2} {3}°C · wettest {4} · driest {5}',
+  '格子 {0}°N {1}°E': 'Cell {0}°N {1}°E', '这个世界用旧版程序预处理，没有逐月气候数据。': 'This world was preprocessed by an older version and has no monthly climate data.',
+  '更新预处理': 'Update preprocessing', '地形与水': 'Terrain & water', '资源与承载': 'Resources & capacity',
+  '承载力单位：人/km²。潜在人口 = 最优生计方式下的承载密度 × 陆地面积 = {0}': 'Capacities in people/km². Potential population = density under the best livelihood × land area = {0}',
+  '正在更新预处理…': 'Updating preprocessing…', '陆地 {0} km² · {1} 格': 'Land {0} km² · {1} cells', '潜在人口 {0}': 'Potential population {0}',
+  '平均：年均温 {0}°C · 年降水 {1} mm · 海拔 {2} m': 'Mean: {0}°C · {1} mm/yr · {2} m elevation', '气候带': 'Climate zones',
+  '潜在人口(按主导生计)': 'Potential population (by livelihood)', '极值': 'Extremes', '最高': 'Highest', '最暖': 'Warmest', '最冷': 'Coldest',
+  '最湿': 'Wettest', '最干': 'Driest', '环境分析 · 尚未演化': 'Environment analysis · not simulated', '开始演化…': 'Start a run…',
+  '环境分析(未演化)': 'Environment analysis (no simulation)', '历史演化': 'History runs', '世界不存在或尚未完成预处理': 'World not found or not yet preprocessed',
+  '仅环境分析': 'environment analysis only', '查看气候与资源': 'View climate & resources',
+  '已创建「{0}」，正在预处理；完成后点"查看气候与资源"': 'Created "{0}", preprocessing; when done click "View climate & resources"',
+  '允许演化': 'Simulation', '关闭后该套餐只能做环境分析(气候、水文、资源)，不能发起历史演化': 'When off, this plan only offers environment analysis (climate, hydrology, resources) and cannot start history runs',
+  '概况': 'Summary', '需要 lon 与 lat(或 cell)': 'lon and lat (or cell) are required', '坐标不在地图范围内': 'The coordinates are outside the map',
+
   // ---- 服务端固定文本(用 tr 翻译) ----
   '已取消': 'Cancelled', '世界不存在': 'World not found', '地形与气候预处理': 'Terrain & climate preprocessing', '打包导出': 'Packaging export',
   '演化还没有帧': 'The run has no frames yet', '需要管理员令牌(见 data/admin.key)': 'Admin token required (see data/admin.key)',
@@ -383,8 +399,11 @@ export const EN_PATTERNS = [
   ['map\\.json 没有 bounds，且图片不是带地理参考的 GeoTIFF', 'map.json has no bounds and the image is not a georeferenced GeoTIFF'],
   ['经纬度范围无效: (.+)', 'Invalid bounds: $1'],
   ['未知的 elevation\\.type: (.+)', 'Unknown elevation.type: $1'],
+  ['套餐 (.+) 只包含环境分析\\(气候、水文、资源\\)，不能发起历史演化', 'Plan $1 only includes environment analysis (climate, hydrology, resources) and cannot start history runs'],
   ['国际站地址为 (.+)', 'International endpoint: $1'],
   ['(.+) 的接口地址必须以 http:// 或 https:// 开头', 'The base URL of $1 must start with http:// or https://'],
+  // 预处理进度：服务端拼成 "阶段 说明"(如 "climate 气温与降水平流")，放在最后兜底
+  ['(terrain|climate|hydrology|resources|export|preview|cached|done) (.+)', '$1 $2'],
   // 色带识别(带数字的警告)
   ['颜色之间的邻接关系不是单一链条\\(一致性 (\\d+%)\\)，顺序可能有误：地图可能叠加了晕渲、或不是分层设色', 'Colour adjacency is not a single chain (consistency $1); the order may be wrong: the map may have hillshading or not be hypsometric'],
   ['图例色块的排列顺序与地图上的邻接顺序不一致\\(相关 ([\\d.]+)\\)，已按图例方向', 'Legend swatch order disagrees with map adjacency (correlation $1); following the legend'],

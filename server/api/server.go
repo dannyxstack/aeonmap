@@ -208,6 +208,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ws", s.handleWS)
 	s.adminRoutes(mux)
 	s.aiRoutes(mux)
+	s.envRoutes(mux)
 	mux.HandleFunc("POST /v1/colorbands", s.auth(s.handleColorBands))
 	return logRequests(mux)
 }
@@ -492,6 +493,11 @@ func (s *Server) submitError(w http.ResponseWriter, err error) {
 	var qe *quotaError
 	if errors.As(err, &qe) {
 		fail(w, 402, "quota_exceeded", err.Error())
+		return
+	}
+	var pe *planError
+	if errors.As(err, &pe) {
+		fail(w, 403, "plan_restricted", err.Error())
 		return
 	}
 	fail(w, 400, "bad_request", err.Error())
