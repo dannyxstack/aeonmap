@@ -35,10 +35,20 @@ func (s *Server) adminAuth(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// clientIP 返回真实客户端地址。直连方是本机或内网(即反向代理，如 deploy/Caddyfile)时，
+// 取 X-Forwarded-For 最右一项(代理追加的那一项，客户端伪造不了)；公网直连时忽略该头。
 func clientIP(r *http.Request) string {
 	h, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		h = r.RemoteAddr
+	}
+	if ip := net.ParseIP(h); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			if v := strings.TrimSpace(parts[len(parts)-1]); net.ParseIP(v) != nil {
+				return v
+			}
+		}
 	}
 	return h
 }

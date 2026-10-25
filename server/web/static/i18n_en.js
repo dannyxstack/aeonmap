@@ -15,7 +15,7 @@ export const EN_DICT = {
   '密钥无效，请重新输入。': 'Invalid key, please try again.',
 
   // ---- 回放页 ----
-  '世界推演回放': 'World Simulator · Replay', '世界推演 · 回放': 'World Simulator · Replay', '演化': 'Run',
+  'AeonMap · 回放': 'AeonMap · Replay', '演化': 'Run',
   '参数 / 新建演化': 'Parameters / New run', '控制台': 'Console', '图层': 'Layers', '叠加': 'Overlays',
   '地形晕渲': 'Hillshade', '边界线': 'Borders', '大河': 'Major rivers', '政权名称': 'Polity names', '格子详情': 'Cell details',
   '关闭 (Esc)': 'Close (Esc)', '后退 5 年': 'Back 5 years', '播放/暂停 (空格)': 'Play / pause (Space)', '前进 5 年': 'Forward 5 years',
@@ -155,7 +155,7 @@ export const EN_DICT = {
   '同时存在的超级帝国上限': 'Maximum simultaneous super-empires', '统治人口占比达到此值时实力加成完全消退': 'Population share at which the power bonus fully fades',
 
   // ---- 控制台 ----
-  '世界推演控制台': 'World Simulator Console', '接口文档': 'API docs', '切换密钥': 'Switch key', '世界': 'Worlds',
+  'AeonMap 控制台': 'AeonMap Console', '接口文档': 'API docs', '切换密钥': 'Switch key', '世界': 'Worlds',
   '上传高程图或草图，自动推演气候、水文、资源与承载力': 'Upload an elevation map or sketch to derive climate, hydrology, resources and carrying capacity',
   '上传地图': 'Upload map', '地图文件': 'Map file', 'AI 识图': 'AI map reading', '识别并预填': 'Read & prefill', '类型': 'Type',
   '灰度高程图(8/16 位 PNG、TIFF/GeoTIFF)': 'Greyscale elevation (8/16-bit PNG, TIFF/GeoTIFF)', '手绘草图(按颜色识别)': 'Hand-drawn sketch (by colour)',
@@ -218,7 +218,7 @@ export const EN_DICT = {
   '贴海一端为低': 'coast end is low', '按图例排列': 'from legend order', '按参考高程': 'from reference elevation', '按配色习惯': 'from colour convention',
 
   // ---- 管理后台 ----
-  '管理后台': 'Admin', '世界推演 · 管理后台': 'World Simulator · Admin', '概览': 'Overview', '用户': 'Users',
+  '管理后台': 'Admin', 'AeonMap · 管理后台': 'AeonMap · Admin', '概览': 'Overview', '用户': 'Users',
   '套餐与接口配置': 'Plans & API settings', '审计日志': 'Audit log', '新建用户': 'New user', '邮箱': 'Email', '备注': 'Note',
   '令牌无效，请重新输入。': 'Invalid token, please try again.', '管理员登录': 'Admin sign-in',
   '管理员令牌保存在服务器的 data/admin.key(也可用环境变量 MAPSIM_ADMIN_TOKEN 指定)。': 'The admin token is stored on the server in data/admin.key (or set it with the MAPSIM_ADMIN_TOKEN environment variable).',

@@ -1,4 +1,4 @@
-// mapsim：世界推演引擎的唯一入口。
+// mapsim：AeonMap 世界推演引擎的唯一入口。
 //
 //	mapsim [serve]                         启动接口服务与网页(默认 http://127.0.0.1:8765)
 //	mapsim run -years 4000                 在内置欧亚世界上无界面演化(结果归公共租户)

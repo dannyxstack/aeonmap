@@ -1,7 +1,7 @@
-"""世界推演引擎 Python SDK(只依赖标准库)。
+"""AeonMap 世界推演引擎 Python SDK(只依赖标准库)。
 
     from mapsim_client import Client
-    c = Client("http://127.0.0.1:8765", "msk_...")
+    c = Client("https://aeonmap.novakitestudio.com", "msk_...")  # 本地部署用 http://127.0.0.1:8765
     world, job = c.create_world("dem.png", input="grayscale", bounds=(110, 160, -45, -10),
                                 elevation={"min": -3000, "max": 5000})
     c.wait(job["id"])

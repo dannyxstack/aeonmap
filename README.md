@@ -1,4 +1,6 @@
-# 世界推演引擎
+# AeonMap
+
+世界推演引擎。线上地址：https://aeonmap.novakitestudio.com
 
 上传地形(高程图或手绘草图)，推演出气候、水文、资源、人口、政权兴衰史与交通网络，以标准格式交付：人用网页，程序用接口。
 
@@ -30,6 +32,20 @@ cd server && go build -o ../mapsim ./cmd/mapsim && cd ..
 界面语言：英文(默认)与中文，在每个页面右上角切换，选择保存在浏览器里。词条在 `server/web/static/i18n_en.js`(键为中文原文，服务端返回的错误/进度/警告按模式匹配翻译)；新增界面文字时用 `t('中文')` 包起来并补一条英文。接口返回的消息与文档仍为中文。
 
 Docker：`docker compose up -d --build`(数据在 `./data`，预处理缓存在 `./cache`)。
+
+### 线上部署(aeonmap.novakitestudio.com)
+
+服务只监听 HTTP，由反向代理负责 HTTPS 证书与转发(WebSocket 回放通道 `/ws` 也经同一域名)。
+
+1. DNS：在 novakitestudio.com 下添加 `aeonmap` 的 A/AAAA 记录(或 CNAME)指向服务器。
+2. 启动服务，只让本机的代理访问：`MAPSIM_BIND=127.0.0.1 docker compose up -d --build`
+3. 反向代理：`deploy/Caddyfile` 可直接使用(自动申请证书)：`sudo caddy run --config deploy/Caddyfile`，或参照其中注释改用 Nginx。
+4. 线上请关闭管理后台里的"允许回调到内网地址"，并用环境变量 `MAPSIM_ADMIN_TOKEN` 设置足够长的管理员令牌。
+
+- 控制台：https://aeonmap.novakitestudio.com/console.html
+- 回放：https://aeonmap.novakitestudio.com/index.html
+- 管理后台：https://aeonmap.novakitestudio.com/admin.html
+- 接口文档：https://aeonmap.novakitestudio.com/v1/openapi.yaml
 
 ## 接口速览
 

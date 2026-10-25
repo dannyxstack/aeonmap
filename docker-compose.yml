@@ -1,5 +1,5 @@
 # 用法：
-#   docker compose up -d --build                                  启动接口与网页 http://127.0.0.1:8765
+#   docker compose up -d --build                                  启动接口与网页 http://127.0.0.1:8765(线上：https://aeonmap.novakitestudio.com)
 #   docker compose exec mapsim /app/mapsim tenant create -name 客户A -plan pro   新建租户并打印接口密钥
 #   本地密钥：首次启动自动创建，保存在 ./data/local.key
 services:
@@ -9,7 +9,8 @@ services:
     # 以宿主机用户身份运行，./runs 与 ./cache 里的文件归属不变
     user: "${UID:-1000}:${GID:-1000}"
     ports:
-      - "0.0.0.0:${MAPSIM_PORT:-8765}:8765"
+      # 放在反向代理(见 deploy/Caddyfile)后面时设 MAPSIM_BIND=127.0.0.1，只让代理访问
+      - "${MAPSIM_BIND:-0.0.0.0}:${MAPSIM_PORT:-8765}:8765"
     volumes:
       - ./data:/app/data     # 租户、世界、任务、演化回放、导出包、用量
       - ./cache:/app/cache   # 预处理缓存

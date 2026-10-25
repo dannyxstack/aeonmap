@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: 世界推演引擎 API
+  title: AeonMap API
   version: "1.1.0"
   description: |
     上传地形(高程图或草图) → 推演气候、水文、资源、人口、政权历史与交通网络 → 以标准格式导出。
@@ -11,7 +11,10 @@ info:
     - 计费单位"算力点"：预处理 = 陆地格/1万；演化 = 陆地格×年数/200万；导出 = 1。超出套餐额度返回 402。
     - 回调签名：`X-Mapsim-Signature: sha256=HMAC_SHA256(webhookSecret, "{X-Mapsim-Timestamp}." + body)`，密钥见 `GET /v1/me`。
 servers:
+  - url: https://aeonmap.novakitestudio.com
+    description: 线上服务
   - url: http://127.0.0.1:8765
+    description: 本地部署
 security:
   - bearer: []
 components:

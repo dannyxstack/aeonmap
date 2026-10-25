@@ -1,0 +1,22 @@
+# AeonMap 反向代理：自动申请并续期 HTTPS 证书，转发到本机的 mapsim(含 /ws WebSocket)。
+#   sudo caddy run --config deploy/Caddyfile
+# 上传大文件时注意套餐的上传上限(最大 internal 套餐 2000 MB)。
+#
+# Nginx 等价配置要点：
+#   location / { proxy_pass http://127.0.0.1:8765; proxy_http_version 1.1;
+#                proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";
+#                proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#                client_max_body_size 2100m; proxy_read_timeout 600s; }
+
+aeonmap.novakitestudio.com {
+	encode zstd gzip
+	request_body {
+		max_size 2100MB
+	}
+	reverse_proxy 127.0.0.1:8765 {
+		header_up X-Forwarded-For {remote_host}
+		transport http {
+			read_timeout 10m
+		}
+	}
+}

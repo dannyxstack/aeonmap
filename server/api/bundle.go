@@ -72,7 +72,7 @@ func (r *Runner) buildExport(path string, pw *platform.World, w *world.World, ru
 		return &export.Raster{W: w.NX, H: w.NY, West: g.West, North: g.North, Res: g.Res, Description: desc}
 	}
 	readme := &strings.Builder{}
-	fmt.Fprintf(readme, "# 世界推演导出包\n\n- 世界：%s (%s)\n- 引擎版本：%s\n- 预处理：%s\n- 网格：%d×%d，%.4g°，西 %.4g 北 %.4g\n- 导出时间：%s\n",
+	fmt.Fprintf(readme, "# AeonMap 导出包\n\n- 世界：%s (%s)\n- 引擎版本：%s\n- 预处理：%s\n- 网格：%d×%d，%.4g°，西 %.4g 北 %.4g\n- 导出时间：%s\n",
 		pw.Name, pw.ID, sim.EngineVersion, filepath.Base(w.Dir), w.NX, w.NY, g.Res, g.West, g.North, time.Now().UTC().Format(time.RFC3339))
 
 	// ---- 世界(静态)图层 ----
