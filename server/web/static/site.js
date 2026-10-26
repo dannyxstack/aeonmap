@@ -16,17 +16,20 @@ export async function initSite() {
   mountLang($('langSlot'));
   let me = { guest: true };
   try { me = await getMe(); } catch { /* 忽略 */ }
+  const s = await site();
+  const trial = s.auth.anonymous; // 开放免登录试用：不注册也能直接用
   const a = $('authSlot');
   if (a) {
     a.innerHTML = me.guest
-      ? `<a class="btnlink ghost" href="/login.html">${t('登录')}</a><a class="btnlink primary" href="/login.html">${t('免费开始')}</a>`
-      : `<a class="btnlink ghost" href="#" id="navLogout">${t('退出')}</a><a class="btnlink primary" href="/console.html">${t('控制台')}</a>`;
+      ? `<a class="btnlink ghost" href="/login.html">${t('登录')}</a><a class="btnlink primary" href="${trial ? '/console.html' : '/login.html'}">${trial ? t('立即试用') : t('免费开始')}</a>`
+      : me.anonymous
+        ? `<a class="btnlink ghost" href="/login.html?next=/console.html">${t('登录 / 注册')}</a><a class="btnlink primary" href="/console.html">${t('控制台')}</a>`
+        : `<a class="btnlink ghost" href="#" id="navLogout">${t('退出')}</a><a class="btnlink primary" href="/console.html">${t('控制台')}</a>`;
     $('navLogout')?.addEventListener('click', (e) => { e.preventDefault(); logout(); });
   }
   document.querySelectorAll('[data-cta]').forEach((el) => {
-    if (!me.guest) { el.textContent = t('进入控制台'); el.href = '/console.html'; }
+    if (!me.guest) { el.textContent = t('进入控制台'); el.href = '/console.html'; } else if (trial) { el.textContent = t('立即试用，无需注册'); el.href = '/console.html'; }
   });
-  const s = await site();
   document.querySelectorAll('[data-site]').forEach((el) => {
     const k = el.dataset.site;
     const v = k === 'operator' ? (s.operator || s.name) : k === 'contact' ? (s.contact || '') : s.name;
@@ -46,7 +49,9 @@ export function money(v, cur) {
 
 // 价格卡片：按月费从低到高；注册套餐标为"免费开始"，付费套餐暂时通过邮件开通
 export function renderPlans(el, s, me) {
-  const plans = [...s.plans].sort((a, b) => a.priceMonthly - b.priceMonthly);
+  // 试用套餐不作为可选套餐展示(除非它就是注册套餐)，改为在卡片上方说明
+  const trialPlan = s.auth.anonymous && s.anonPlan !== s.signupPlan ? s.plans.find((p) => p.name === s.anonPlan) : null;
+  const plans = [...s.plans].filter((p) => !trialPlan || p.name !== trialPlan.name).sort((a, b) => a.priceMonthly - b.priceMonthly);
   const mid = plans.length > 2 ? plans[1].name : '';
   el.innerHTML = plans.map((p) => {
     const free = p.priceMonthly <= 0;
@@ -62,7 +67,7 @@ export function renderPlans(el, s, me) {
     ];
     const li = items.map((x) => (Array.isArray(x) ? (x[1] ? `<li class="no">${x[0]}</li>` : `<li>${x[0]}</li>`) : `<li>${x}</li>`)).join('');
     let cta;
-    if (free) cta = me.guest ? `<a class="btnlink primary big" href="/login.html">${t('免费开始')}</a>` : `<a class="btnlink big" href="/console.html">${t('进入控制台')}</a>`;
+    if (free) cta = me.guest || me.anonymous ? `<a class="btnlink primary big" href="/login.html">${t('免费注册')}</a>` : `<a class="btnlink big" href="/console.html">${t('进入控制台')}</a>`;
     else if (s.contact) cta = `<a class="btnlink ${p.name === mid ? 'primary' : ''} big" href="mailto:${esc(s.contact)}?subject=${encodeURIComponent(`${s.name} ${tr(p.label)}`)}">${t('联系开通')}</a>`;
     else cta = `<span class="btnlink big" style="opacity:.6">${t('即将开放')}</span>`;
     return `<div class="plan ${p.name === mid ? 'hl' : ''}">
@@ -70,6 +75,11 @@ export function renderPlans(el, s, me) {
       <div class="price">${free ? t('免费') : money(p.priceMonthly, s.currency)}${free ? '' : `<small> / ${t('月')}</small>`}</div>
       <ul>${li}</ul>${cta}</div>`;
   }).join('');
+  if (s.auth.anonymous) {
+    const tp = trialPlan || s.plans.find((p) => p.name === s.signupPlan);
+    el.insertAdjacentHTML('beforebegin', `<div class="trialbar" style="margin-bottom:18px">${t('无需注册即可试用：每月 {0} 算力点，单次最长演化 {1} 年。注册后试用期间的作品会保留。', tp ? fmtNum(tp.monthlyUnits) : '—', tp ? fmtNum(tp.maxYears) : '—')}
+      ${me.guest ? `<a class="btnlink primary" href="/console.html">${t('立即试用')}</a>` : ''}</div>`);
+  }
 }
 
 export { t, EN };

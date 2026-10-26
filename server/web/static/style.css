@@ -221,3 +221,5 @@ body.worldmode label.chk:has(#optBorders), body.worldmode label.chk:has(#optLabe
 svg.climo { width: 100%; height: auto; font-size: 10px; fill: var(--muted); }
 a.btnlink.primary { background: var(--accent); border-color: var(--accent); color: #1a1408; font-weight: 600; }
 a.btnlink.primary:hover { filter: brightness(1.08); background: var(--accent); }
+.trialbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 14px 0 0; padding: 10px 14px; border: 1px solid var(--accent);
+  border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, transparent); font-size: 14px; }

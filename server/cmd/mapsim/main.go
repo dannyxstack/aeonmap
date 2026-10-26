@@ -148,6 +148,7 @@ func main() {
 			log.Fatal(err)
 		}
 		srv.AdminToken = tok
+		srv.StartMaintenance(ctx)
 		if created {
 			log.Printf("已生成管理员令牌，保存在 %s(管理后台 /admin.html)", filepath.Join(*dataDir, "admin.key"))
 		}

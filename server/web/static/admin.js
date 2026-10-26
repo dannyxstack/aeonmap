@@ -71,7 +71,7 @@ async function renderOverview() {
   const kind = o.usage.byKind;
   $('tab-overview').innerHTML = `
     <div class="kpis">
-      <div class="kpi"><div class="v">${fmtN(tn.total)}</div><div class="l">${t('注册用户')}</div><div class="s">${t('本月新增 {0} · 停用 {1}', tn.newThisMonth, tn.suspended)}</div></div>
+      <div class="kpi"><div class="v">${fmtN(tn.total)}</div><div class="l">${t('注册用户')}</div><div class="s">${t('本月新增 {0} · 停用 {1}', tn.newThisMonth, tn.suspended)}${tn.anonymous ? ' · ' + t('试用账户 {0}(今天 {1} 点)', tn.anonymous, tn.anonUnitsToday) : ''}</div></div>
       <div class="kpi"><div class="v">${fmtN(tn.paid)}</div><div class="l">${t('付费用户')}</div><div class="s">${byPlan || '—'}</div></div>
       <div class="kpi"><div class="v">${o.revenue.currency === 'CNY' ? '¥' : ''}${fmtN(o.revenue.mrr)}</div><div class="l">${t('预估月收入(按套餐月费)')}</div><div class="s">${t('尚未接入支付，仅按当前套餐估算')}</div></div>
       <div class="kpi"><div class="v">${fmtN(tn.active30d)}</div><div class="l">${t('30 天活跃用户')}</div><div class="s">${t('有调用接口或提交任务')}</div></div>
@@ -106,7 +106,7 @@ async function renderTenants() {
     sec.innerHTML = `<div class="toolbar">
       <input id="tq" placeholder="${t('搜索名称 / 邮箱 / ID')}" style="min-width:240px">
       <select id="tplan"><option value="">${t('全部套餐')}</option>${Object.values(plans).map((p) => `<option value="${p.name}">${esc(planLabel(p, p.name))}</option>`).join('')}</select>
-      <select id="tflag"><option value="">${t('全部')}</option><option value="paid">${t('付费')}</option><option value="free">${t('未付费')}</option><option value="suspended">${t('已停用')}</option></select>
+      <select id="tflag"><option value="">${t('全部')}</option><option value="paid">${t('付费')}</option><option value="free">${t('未付费')}</option><option value="suspended">${t('已停用')}</option><option value="anonymous">${t('免登录试用')}</option></select>
       <div class="spacer"></div><button id="btnNewTenant">${t('新建用户')}</button></div>
       <div class="panel"><table class="jobs" id="ttable"><thead><tr><th>${t('用户')}</th><th>${t('套餐')}</th><th>${t('本月用量 / 额度')}</th><th>${t('世界 / 演化 / 任务')}</th><th>${t('最近活动')}</th><th>${t('注册')}</th></tr></thead><tbody></tbody></table></div>`;
     ['tq', 'tplan', 'tflag'].forEach((id) => $(id).addEventListener('input', drawTenants));
@@ -122,12 +122,13 @@ function drawTenants() {
   const rows = S.tenants.filter((x) => x.id !== 'public')
     .filter((x) => !q || [x.name, x.email, x.id].some((v) => (v || '').toLowerCase().includes(q)))
     .filter((x) => !plan || x.plan === plan)
-    .filter((x) => !flag || (flag === 'paid' && x.paid && !x.suspended) || (flag === 'free' && !x.paid) || (flag === 'suspended' && x.suspended));
+    .filter((x) => (flag === 'anonymous') === (x.source === 'anonymous')) // 试用账户默认不列出，选"免登录试用"时只看它们
+    .filter((x) => !flag || flag === 'anonymous' || (flag === 'paid' && x.paid && !x.suspended) || (flag === 'free' && !x.paid) || (flag === 'suspended' && x.suspended));
   $('ttable').querySelector('tbody').innerHTML = rows.map((tn) => {
     const q2 = tn.quota < 0 ? t('不限') : fmtN(tn.quota);
     const pct = tn.quota > 0 ? Math.min(100, tn.usedMonth / tn.quota * 100) : 0;
     const last = [tn.lastSeen, tn.lastJob].filter(Boolean).sort().pop();
-    const src = { cli: '命令行', admin: '后台', signup: '自助注册' }[tn.source];
+    const src = { cli: '命令行', admin: '后台', signup: '自助注册', email: '邮箱登录', google: 'Google 登录', anonymous: '免登录试用' }[tn.source];
     return `<tr class="click" data-tenant="${tn.id}"><td>${esc(tr(tn.name))} ${tn.suspended ? `<span class="tag failed">${t('停用')}</span>` : ''}<div class="muted">${esc(tn.email || '')} ${tn.id}</div></td>
       <td><span class="pill ${tn.paid ? 'paid' : ''}">${esc(tr(tn.planLabel || tn.plan))}</span>${tn.paid ? `<div class="muted">${t('¥{0}/月', fmtN(tn.price))}</div>` : ''}</td>
       <td>${fmtN(tn.usedMonth)} / ${q2}${tn.quotaCustom ? ` <span class="muted">${t('(单独)')}</span>` : ''}<div class="bar" style="width:120px;height:5px;background:var(--panel2);border-radius:3px;margin-top:4px"><i style="display:block;height:100%;width:${pct}%;background:${pct > 90 ? '#d8584a' : 'var(--accent)'};border-radius:3px"></i></div></td>
@@ -263,6 +264,12 @@ function renderSettings() {
         <label>${t('自助注册')}</label><div><label style="color:var(--text)"><input type="checkbox" id="pSignup" ${st.allowSignup ? 'checked' : ''} style="width:auto"> ${t('开放 POST /v1/signup')}</label>
           ${t('新用户套餐')} <select id="pSignupPlan">${Object.values(st.plans).map((p) => `<option value="${p.name}" ${p.name === st.signupPlan ? 'selected' : ''}>${esc(planLabel(p, p.name))}</option>`).join('')}</select>
           <span class="muted">${t('每个 IP 每小时最多 5 次')}</span></div>
+        <label>${t('免登录试用')}</label><div><label style="color:var(--text)"><input type="checkbox" id="pAnon" ${st.allowAnonymous ? 'checked' : ''} style="width:auto"> ${t('访客不注册也能上传与演化(第一次计算时自动开试用账户)')}</label>
+          <div style="margin-top:6px">${t('试用套餐')} <select id="pAnonPlan">${Object.values(st.plans).map((p) => `<option value="${p.name}" ${p.name === (st.anonPlan || st.signupPlan) ? 'selected' : ''}>${esc(planLabel(p, p.name))}</option>`).join('')}</select>
+          ${t('每个 IP 每天最多')} <input id="pAnonIP" type="number" min="1" value="${st.anonPerIPDaily || 3}" style="width:60px"> ${t('个试用账户')}</div>
+          <div style="margin-top:6px">${t('全部试用账户每天合计最多')} <input id="pAnonBudget" type="number" min="0" value="${st.anonDailyBudget || 0}" style="width:90px"> ${t('算力点(0 = 不限)')}
+          · ${t('未转正保留')} <input id="pAnonDays" type="number" min="1" value="${st.anonMaxAgeDays || 30}" style="width:60px"> ${t('天')}</div>
+          <span class="muted">${t('试用账户的额度、单次年数、并发按试用套餐限制；用邮箱或 Google 登录后转为正式账户，作品保留')}</span></div>
         <label>${t('公开示例演化')}</label><div><textarea id="pFeatured" rows="3" style="width:100%" placeholder="20261019-140518-367cac">${esc((st.featuredRuns || []).join('\n'))}</textarea>
           <span class="muted">${t('每行一个演化 ID；未登录的访客也能回放这些演化(首页"查看示例"、价格页等)')}</span></div>
         <label>${t('内网回调')}</label><label style="color:var(--text)"><input type="checkbox" id="pPriv" ${st.allowPrivateWebhooks ? 'checked' : ''} style="width:auto"> ${t('允许回调到内网/本机地址(仅本地开发，生产环境请关闭以防 SSRF)')}</label>
@@ -318,6 +325,11 @@ async function saveSettings() {
   st.allowSignup = $('pSignup').checked;
   st.signupPlan = rename[$('pSignupPlan').value] || $('pSignupPlan').value;
   st.allowPrivateWebhooks = $('pPriv').checked;
+  st.allowAnonymous = $('pAnon').checked;
+  st.anonPlan = rename[$('pAnonPlan').value] || $('pAnonPlan').value;
+  st.anonPerIPDaily = Number($('pAnonIP').value) || 0;
+  st.anonDailyBudget = Number($('pAnonBudget').value) || 0;
+  st.anonMaxAgeDays = Number($('pAnonDays').value) || 0;
   st.featuredRuns = $('pFeatured').value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
   try {
     S.settings = await api('/admin/v1/settings', { method: 'PUT', body: st });
@@ -428,7 +440,7 @@ async function testAI(id, file) {
 }
 
 // ---------------- 审计 ----------------
-const ACTIONS = L({ 'tenant.create': '新建用户', 'tenant.update': '修改用户', 'tenant.signup': '自助注册', 'key.add': '新增密钥', 'key.revoke': '吊销密钥', 'settings.update': '修改配置', 'job.cancel': '取消任务', 'tenant.delete': '删除用户', 'ai.update': '修改 AI 配置', 'ai.test': '测试 AI 识图', 'tenant.self_delete': '自助删除账户' });
+const ACTIONS = L({ 'tenant.create': '新建用户', 'tenant.update': '修改用户', 'tenant.signup': '自助注册', 'key.add': '新增密钥', 'key.revoke': '吊销密钥', 'settings.update': '修改配置', 'job.cancel': '取消任务', 'tenant.delete': '删除用户', 'ai.update': '修改 AI 配置', 'ai.test': '测试 AI 识图', 'tenant.self_delete': '自助删除账户', 'tenant.anonymous': '开试用账户', 'tenant.claim': '试用账户转正' });
 async function renderAudit() {
   const rows = await api('/admin/v1/audit');
   $('tab-audit').innerHTML = `<div class="panel"><table class="jobs"><thead><tr><th>${t('时间')}</th><th>${t('操作')}</th><th>${t('对象')}</th><th>${t('详情')}</th><th>IP</th></tr></thead><tbody>

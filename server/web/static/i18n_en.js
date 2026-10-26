@@ -357,6 +357,21 @@ export const EN_DICT = {
   '每次 {0} 点': '{0} unit(s) each', 'GeoTIFF、GeoJSON、CSV 与游戏引擎资源打包下载': 'GeoTIFF, GeoJSON, CSV and game-engine assets as one download',
   '自动识别分层设色地图的颜色与海拔': 'Detects colour-to-elevation mapping on hypsometric maps',
 
+  // ---- 免登录试用 ----
+  '你正在免登录试用：每月 {0} 算力点，单次最长演化 {1} 年。登录后试用期间的世界与演化会保留在你的账户里。': "You're on a free trial without an account: {0} units per month, runs up to {1} years. Sign in to keep the worlds and runs you create.",
+  '试用账户': 'Trial account', '试用账户没有接口密钥。登录后可以创建接口密钥、用程序调用接口。': 'Trial accounts have no API keys. Sign in to create keys and use the API.',
+  '试用账户 {0}(今天 {1} 点)': '{0} trial accounts ({1} units today)', '免登录试用': 'No-sign-up trial',
+  '访客不注册也能上传与演化(第一次计算时自动开试用账户)': 'Visitors can upload and simulate without signing up (a trial account is created on first use)',
+  '试用套餐': 'Trial plan', '每个 IP 每天最多': 'up to', '个试用账户': 'trial accounts per IP per day', '全部试用账户每天合计最多': 'All trial accounts together: at most',
+  '算力点(0 = 不限)': 'units per day (0 = unlimited)', '未转正保留': 'keep unconverted trials for', '天': 'days',
+  '试用账户的额度、单次年数、并发按试用套餐限制；用邮箱或 Google 登录后转为正式账户，作品保留': 'Trial accounts are limited by the trial plan (units, years per run, concurrency); signing in with email or Google converts them to regular accounts and keeps their work',
+  '开试用账户': 'Trial account created', '试用账户转正': 'Trial converted', '立即试用': 'Try it now', '立即试用，无需注册': 'Try it now, no sign-up', '免费注册': 'Sign up free',
+  '无需注册即可试用：每月 {0} 算力点，单次最长演化 {1} 年。注册后试用期间的作品会保留。': 'Try it without an account: {0} units per month, runs up to {1} years. Sign up later and keep what you made.',
+  '你正在免登录试用。用新邮箱登录后，试用期间的世界与演化会保留在你的账户里。': "You're using a trial. Sign in with a new email and your trial worlds and runs will be kept in your account.",
+  '免登录试用的数值不能为负': 'Trial settings cannot be negative', '今天的免登录试用额度已用完，登录后可继续使用': "Today's free trial allowance is used up; sign in to continue",
+  '暂未开放免登录试用，请先登录': 'The no-sign-up trial is not available; please sign in', '今天的试用次数已达上限，请登录后继续': 'Trial limit for today reached; please sign in to continue',
+  '试用账户不能创建接口密钥，请先登录': 'Trial accounts cannot create API keys; please sign in',
+
   // ---- 服务端固定文本(用 tr 翻译) ----
   '跨站请求被拒绝': 'Cross-site request rejected', '邮箱登录尚未配置': 'Email sign-in is not configured', '邮件发送失败，请稍后再试': 'Could not send the email; please try again later',
   '上一个识别任务还在进行中，请等它完成': 'Your previous detection task is still running; please wait for it to finish',
@@ -485,6 +500,8 @@ export const EN_PATTERNS = [
   ['套餐 (.+) 只包含环境分析\\(气候、水文、资源\\)，不能发起历史演化', 'Plan $1 only includes environment analysis (climate, hydrology, resources) and cannot start history runs'],
   ['同时进行中的任务已达上限\\((\\d+) 个，套餐 (.+)\\)，请等前面的任务完成', 'You already have the maximum number of jobs in progress ($1 on plan $2); wait for earlier jobs to finish'],
   ['管理后台需要通过 Cloudflare Access 验证：(.+)', 'The admin console requires Cloudflare Access verification: $1'],
+  ['试用套餐 (.+) 不存在', 'Trial plan $1 does not exist'],
+  ['试用-(\\w+)', 'Trial-$1'],
   ['国际站地址为 (.+)', 'International endpoint: $1'],
   ['(.+) 的接口地址必须以 http:// 或 https:// 开头', 'The base URL of $1 must start with http:// or https://'],
   // 预处理进度：服务端拼成 "阶段 说明"(如 "climate 气温与降水平流")，放在最后兜底

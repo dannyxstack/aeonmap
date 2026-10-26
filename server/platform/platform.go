@@ -36,8 +36,8 @@ type Plan struct {
 	MaxYears     int     `json:"maxYears"`
 	MaxFamilies  int     `json:"maxFamilies"`
 	MaxUploadMB  int     `json:"maxUploadMB"`
-	PriceMonthly float64 `json:"priceMonthly"`         // >0 视为付费套餐
-	NoSimulate   bool    `json:"noSimulate,omitempty"` // 只含环境分析(气候、水文、资源)，不能发起历史演化
+	PriceMonthly float64 `json:"priceMonthly"`            // >0 视为付费套餐
+	NoSimulate   bool    `json:"noSimulate,omitempty"`    // 只含环境分析(气候、水文、资源)，不能发起历史演化
 	MaxActive    int     `json:"maxActiveJobs,omitempty"` // 同时排队+运行的任务上限；0 = 默认 2
 }
 
@@ -142,7 +142,7 @@ type Store struct {
 	used map[string]int // 租户-月份 → 已用算力点
 	tmod time.Time      // tenants.json 的修改时间(命令行新建租户后服务端自动重新加载)
 	set  Settings
-	seen map[string]string // 租户 → 最近一次调用接口的时间
+	seen map[string]string   // 租户 → 最近一次调用接口的时间
 	sess map[string]*Session // 会话令牌哈希 → 会话
 }
 
@@ -535,6 +535,9 @@ func (s *Store) CheckQuota(tenant string, units int) error {
 	t, ok := s.Tenant(tenant)
 	if !ok {
 		return ErrNotFound
+	}
+	if err := s.checkAnonBudget(t, units); err != nil { // 试用账户另受全站每日总预算限制
+		return err
 	}
 	p := s.PlanOf(t)
 	if p.MonthlyUnits < 0 {

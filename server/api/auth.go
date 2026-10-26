@@ -187,6 +187,7 @@ func (s *Server) authRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/auth/google", s.handleGoogleStart)
 	mux.HandleFunc("GET /v1/auth/google/callback", s.handleGoogleCallback)
 	mux.HandleFunc("POST /v1/auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /v1/auth/anonymous", s.handleAnonymous)
 	mux.HandleFunc("POST /v1/keys", s.auth(s.handleNewKey))
 	mux.HandleFunc("DELETE /v1/keys/{prefix}", s.auth(s.handleRevokeKey))
 	mux.HandleFunc("DELETE /v1/me", s.auth(s.handleDeleteMe))
@@ -216,7 +217,9 @@ func (s *Server) handleSite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"name": s.Auth.SiteName, "operator": s.Auth.Operator, "contact": s.Auth.Contact,
 		"currency": set.Currency, "plans": plans, "signupPlan": set.SignupPlan, "featuredRuns": set.FeaturedRuns, "pricing": set.Pricing,
-		"auth": map[string]bool{"email": s.Auth.emailEnabled() || s.Auth.Dev, "google": s.Auth.googleEnabled(), "signup": set.AllowSignup, "dev": s.Auth.Dev && !s.Auth.emailEnabled()},
+		"auth": map[string]bool{"email": s.Auth.emailEnabled() || s.Auth.Dev, "google": s.Auth.googleEnabled(), "signup": set.AllowSignup,
+			"dev": s.Auth.Dev && !s.Auth.emailEnabled(), "anonymous": set.AllowAnonymous},
+		"anonPlan": set.AnonPlanName(),
 	})
 }
 
@@ -313,7 +316,7 @@ func (s *Server) handleEmailCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login.html?error=link_expired", http.StatusSeeOther)
 		return
 	}
-	t, err := s.loginTenant(mt.email, "email")
+	t, err := s.loginTenant(r, mt.email, "email")
 	if err != nil {
 		http.Redirect(w, r, "/login.html?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
@@ -322,7 +325,8 @@ func (s *Server) handleEmailCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // loginTenant：按邮箱找到租户；没有则在允许自助注册时新建(注册套餐)。
-func (s *Server) loginTenant(email, via string) (*platform.Tenant, error) {
+// 当前浏览器是免登录试用账户、且该邮箱还没有账户时，试用账户直接转正，试用期间的作品保留。
+func (s *Server) loginTenant(r *http.Request, email, via string) (*platform.Tenant, error) {
 	if t, ok := s.P.TenantByEmail(email); ok {
 		if t.Suspended {
 			return nil, fmt.Errorf("account_suspended")
@@ -332,6 +336,12 @@ func (s *Server) loginTenant(email, via string) (*platform.Tenant, error) {
 	set := s.P.Settings()
 	if !set.AllowSignup {
 		return nil, fmt.Errorf("signup_closed")
+	}
+	if cur, kind := s.identify(r); kind == "session" && cur.IsAnonymous() {
+		if t, err := s.P.ClaimAnonymous(cur.ID, email, via); err == nil {
+			s.P.Audit("tenant.claim", t.ID, clientIP(r), map[string]any{"via": via, "email": email})
+			return t, nil
+		}
 	}
 	name := email
 	if i := strings.IndexByte(email, '@'); i > 0 {
@@ -346,14 +356,81 @@ func (s *Server) loginTenant(email, via string) (*platform.Tenant, error) {
 }
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, t *platform.Tenant, via, next string) {
-	tok, exp, err := s.P.CreateSession(t.ID, via, clientIP(r))
-	if err != nil {
+	if err := s.setSession(w, r, t, via); err != nil {
 		http.Redirect(w, r, "/login.html?error=internal", http.StatusSeeOther)
 		return
 	}
+	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
+}
+
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, t *platform.Tenant, via string) error {
+	tok, exp, err := s.P.CreateSession(t.ID, via, clientIP(r))
+	if err != nil {
+		return err
+	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: tok, Path: "/", Expires: exp, HttpOnly: true,
 		Secure: strings.HasPrefix(s.baseURL(r), "https://"), SameSite: http.SameSiteLaxMode})
-	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
+	return nil
+}
+
+// handleAnonymous：开一个免登录试用账户并写入会话 Cookie。已登录时直接返回当前身份。
+func (s *Server) handleAnonymous(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		fail(w, 403, "forbidden", "跨站请求被拒绝")
+		return
+	}
+	if t, _ := s.identify(r); t != nil {
+		writeJSON(w, 200, map[string]any{"id": t.ID, "anonymous": t.IsAnonymous()})
+		return
+	}
+	set := s.P.Settings()
+	if !set.AllowAnonymous {
+		fail(w, 403, "anonymous_disabled", "暂未开放免登录试用，请先登录")
+		return
+	}
+	if !allow("anon-ip:"+clientIP(r), set.AnonIPLimit(), 24*time.Hour) {
+		fail(w, 429, "rate_limited", "今天的试用次数已达上限，请登录后继续")
+		return
+	}
+	t, err := s.P.CreateAnonymousTenant()
+	if err != nil {
+		fail(w, 500, "internal", err.Error())
+		return
+	}
+	if err := s.setSession(w, r, t, "anonymous"); err != nil {
+		fail(w, 500, "internal", err.Error())
+		return
+	}
+	s.P.Audit("tenant.anonymous", t.ID, clientIP(r), nil)
+	writeJSON(w, 201, map[string]any{"id": t.ID, "anonymous": true})
+}
+
+// StartMaintenance：后台定期清理过期未转正的试用账户(连同其世界与演化)。
+func (s *Server) StartMaintenance(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			days := s.P.Settings().AnonMaxAge()
+			for _, id := range s.P.AnonymousToPrune(time.Duration(days) * 24 * time.Hour) {
+				runs := 0
+				for _, m := range s.E.ListRuns("", "") {
+					if m.Tenant == id {
+						s.E.DeleteRun(m.ID)
+						runs++
+					}
+				}
+				if s.P.DeleteTenant(id) == nil {
+					log.Printf("已清理过期试用账户 %s(%d 个演化)", id, runs)
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -498,7 +575,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login.html?error=google_failed", http.StatusSeeOther)
 		return
 	}
-	t, err := s.loginTenant(email, "google")
+	t, err := s.loginTenant(r, email, "google")
 	if err != nil {
 		http.Redirect(w, r, "/login.html?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
@@ -557,6 +634,10 @@ func (s *Server) googleEmail(ctx context.Context, code, redirect string) (string
 
 func (s *Server) handleNewKey(w http.ResponseWriter, r *http.Request) {
 	t := tenantOf(r)
+	if t.IsAnonymous() {
+		fail(w, 403, "login_required", "试用账户不能创建接口密钥，请先登录")
+		return
+	}
 	if len(t.Keys) >= 20 {
 		fail(w, 400, "bad_request", "密钥数量已达上限(20)，请先吊销不用的密钥")
 		return

@@ -239,3 +239,79 @@ func TestRootAndLegacyReplayLinks(t *testing.T) {
 		t.Fatalf("home: %d", r.StatusCode)
 	}
 }
+
+func anonSession(t *testing.T, ts *httptest.Server) (*http.Cookie, int) {
+	t.Helper()
+	r := do(t, "POST", ts.URL+"/v1/auth/anonymous", "", map[string]string{"Origin": ts.URL}, nil)
+	for _, c := range r.Cookies() {
+		if c.Name == sessionCookie {
+			return c, r.StatusCode
+		}
+	}
+	return nil, r.StatusCode
+}
+
+func TestAnonymousTrial(t *testing.T) {
+	s, ts := testServer(t)
+	if _, code := anonSession(t, ts); code != 403 {
+		t.Fatalf("anonymous disabled should be 403, got %d", code)
+	}
+	st := s.P.Settings()
+	st.AllowAnonymous, st.AnonPerIPDaily, st.AnonDailyBudget = true, 2, 5
+	if err := s.P.SetSettings(st); err != nil {
+		t.Fatal(err)
+	}
+	c, code := anonSession(t, ts)
+	if code != 201 || c == nil {
+		t.Fatalf("anon session: %d", code)
+	}
+	var me map[string]any
+	json.NewDecoder(do(t, "GET", ts.URL+"/v1/me", "", nil, c).Body).Decode(&me)
+	if me["anonymous"] != true || me["plan"].(map[string]any)["name"] != "trial" {
+		t.Fatalf("anon me: %v", me)
+	}
+	anonID := me["id"]
+	if _, code := anonSession(t, ts); code != 201 {
+		t.Fatalf("second anon: %d", code)
+	}
+	if _, code := anonSession(t, ts); code != 429 {
+		t.Fatalf("per-IP limit should give 429, got %d", code)
+	}
+	// 全站每日预算：今天已用 + 本次 > 5 → 拒绝
+	tn, _ := s.P.Tenant(anonID.(string))
+	s.P.Charge(tn.ID, "", "simulate", 4)
+	if err := s.P.CheckQuota(tn.ID, 2); err == nil || !strings.Contains(err.Error(), "试用额度") {
+		t.Fatalf("daily budget not enforced: %v", err)
+	}
+	if err := s.P.CheckQuota(tn.ID, 1); err != nil {
+		t.Fatalf("within budget rejected: %v", err)
+	}
+	// 试用账户用邮箱登录 → 转正，账户 ID 不变
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/auth/email", strings.NewReader(`{"email":"dora@example.com"}`))
+	req.Header.Set("Origin", ts.URL)
+	req.AddCookie(c)
+	resp, _ := http.DefaultClient.Do(req)
+	var out struct{ DevLink string }
+	json.NewDecoder(resp.Body).Decode(&out)
+	u, _ := url.Parse(out.DevLink)
+	cbReq, _ := http.NewRequest("GET", ts.URL+u.RequestURI(), nil)
+	cbReq.AddCookie(c)
+	cb, _ := noRedirect().Do(cbReq)
+	if cb.StatusCode != http.StatusSeeOther {
+		t.Fatalf("callback: %d", cb.StatusCode)
+	}
+	got, ok := s.P.TenantByEmail("dora@example.com")
+	if !ok || got.ID != anonID || got.IsAnonymous() || got.Plan != st.SignupPlan {
+		t.Fatalf("claim failed: %+v", got)
+	}
+	// 清理：转正的不清理，未转正的超龄后清理
+	ids := s.P.AnonymousToPrune(0)
+	for _, id := range ids {
+		if id == anonID {
+			t.Fatal("claimed tenant would be pruned")
+		}
+	}
+	if len(ids) != 1 {
+		t.Fatalf("expected 1 stale anonymous tenant, got %v", ids)
+	}
+}

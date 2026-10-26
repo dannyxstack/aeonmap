@@ -44,7 +44,8 @@ import { setKey, getMe } from './api.js';
 const q = new URLSearchParams(location.search);
 const next = q.get('next') || '/console.html';
 const { me, site } = await initSite();
-if (!me.guest) location.replace(next);
+if (!me.guest && !me.anonymous) location.replace(next); // 试用账户可以在这里登录转正
+if (me.anonymous) $('err').innerHTML = `<div class="ok" style="margin:0 0 12px">${t('你正在免登录试用。用新邮箱登录后，试用期间的世界与演化会保留在你的账户里。')}</div>`;
 $('agree').innerHTML = t('继续即表示你同意{0}与{1}。', `<a href="/terms.html">${t('服务条款')}</a>`, `<a href="/privacy.html">${t('隐私政策')}</a>`);
 const ERR = {
   link_expired: '登录链接已失效或已使用，请重新获取。', signup_closed: '暂未开放注册，请联系我们开通账户。',

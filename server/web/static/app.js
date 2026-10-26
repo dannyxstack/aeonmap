@@ -1,5 +1,5 @@
 import { World, decodeFrame, SCATTERED, baseName, polityTitle } from './data.js';
-import { api, getMe, getKey } from './api.js';
+import { api, getMe, getKey, startTrial } from './api.js';
 import { MapView, buildLayers, GROUP_ORDER } from './map.js';
 import { lutCss, polityColor } from './colors.js';
 import { t, tr, EN, mountLang, fmtNum as fmt, fmtPop } from './i18n.js';
@@ -514,7 +514,7 @@ function enterWorldMode() {
   setStatus(t('环境分析 · 尚未演化'));
   const bp = $('btnParams');
   bp.textContent = t('开始演化…');
-  if (S.me?.guest || S.me?.plan?.noSimulate) bp.hidden = true;
+  if ((S.me?.guest && !S.trialOpen) || S.me?.plan?.noSimulate) bp.hidden = true;
 }
 
 // ---------------- 指标曲线与事件 ----------------
@@ -660,6 +660,10 @@ async function openParams() {
     h += `<label><span>${p.id}<small>${t(p.desc)}</small></span><input data-id="${p.id}" data-int="${p.int}" type="number" step="${p.int ? 1 : 'any'}" min="${p.min}" max="${p.max}" value="${v}"></label>`;
   }
   $('paramForm').innerHTML = h;
+  // 单次年数不超过套餐上限(试用访客按试用套餐)
+  const lim = S.me.guest ? S.trialMaxYears : S.me.plan?.maxYears;
+  const yi = $('paramForm').querySelector('input[data-id="years"]');
+  if (lim && yi) { yi.max = lim; if (+yi.value > lim) yi.value = lim; }
   $('paramDlg').showModal();
 }
 
@@ -668,12 +672,26 @@ async function newRun() {
   $('paramForm').querySelectorAll('input').forEach((el) => {
     params[el.dataset.id] = el.dataset.int === 'true' ? parseInt(el.value, 10) : parseFloat(el.value);
   });
+  const wasGuest = S.me.guest;
+  if (wasGuest) { // 免登录试用：提交时才开试用账户
+    if (!(await startTrial())) { location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search); return; }
+    S.me = await getMe();
+  }
+  let job;
   try {
-    const job = await api(`/v1/worlds/${S.worldId}/jobs`, { method: 'POST', body: { simulate: { params } } });
+    job = await api(`/v1/worlds/${S.worldId}/jobs`, { method: 'POST', body: { simulate: { params } } });
     S.pendingJob = job.id;
     setStatus(t('已提交任务 {0}，等待开始…', job.id));
   } catch (e) { alert(t('启动失败：') + e.message); return; }
   $('paramDlg').close();
+  // 刚开的试用账户：实时推送通道还是访客身份，改为轮询，演化一开始就切过去
+  while (wasGuest && S.pendingJob === job.id) {
+    await new Promise((r) => setTimeout(r, 2000));
+    let j;
+    try { j = await api(`/v1/jobs/${job.id}`); } catch { continue; }
+    onJob(j);
+    if (['failed', 'cancelled', 'succeeded'].includes(j.status)) break;
+  }
 }
 
 // 任务进度推送：自己刚提交的演化一开始就切过去实时观看
@@ -777,7 +795,10 @@ async function main() {
   mountLang($('langSlot'));
   S.me = await getMe(); // 未登录也能看公共世界与公开示例
   if (S.me.guest) {
-    $('btnParams').hidden = true;
+    const site = await fetch('/v1/site').then((r) => r.json()).catch(() => null);
+    S.trialOpen = !!site?.auth.anonymous;
+    S.trialMaxYears = site?.plans.find((p) => p.name === site.anonPlan)?.maxYears;
+    $('btnParams').hidden = !S.trialOpen; // 开放免登录试用时访客也能直接开始演化
     $('consoleLink').textContent = t('登录 / 注册');
     $('consoleLink').href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
   }

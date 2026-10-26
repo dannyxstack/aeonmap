@@ -28,8 +28,28 @@ type Settings struct {
 	Currency             string          `json:"currency"`
 	AllowSignup          bool            `json:"allowSignup"` // 开放自助注册(POST /v1/signup)
 	SignupPlan           string          `json:"signupPlan"`
-	AllowPrivateWebhooks bool            `json:"allowPrivateWebhooks"` // 允许回调到内网地址(仅本地开发)
+	AllowPrivateWebhooks bool            `json:"allowPrivateWebhooks"`   // 允许回调到内网地址(仅本地开发)
 	FeaturedRuns         []string        `json:"featuredRuns,omitempty"` // 公开示例演化：未登录的访客也能回放
+	// 免登录试用：访客第一次计算时自动开匿名试用账户
+	AllowAnonymous  bool   `json:"allowAnonymous"`
+	AnonPlan        string `json:"anonPlan,omitempty"`        // 试用套餐(为空用自助注册套餐)
+	AnonPerIPDaily  int    `json:"anonPerIPDaily,omitempty"`  // 每个 IP 每天最多开几个试用账户；0 = 默认 3
+	AnonDailyBudget int    `json:"anonDailyBudget,omitempty"` // 全部试用账户每天合计可用的算力点；0 = 不限
+	AnonMaxAgeDays  int    `json:"anonMaxAgeDays,omitempty"`  // 未转正的试用账户保留天数；0 = 默认 30
+}
+
+func (st Settings) AnonIPLimit() int {
+	if st.AnonPerIPDaily > 0 {
+		return st.AnonPerIPDaily
+	}
+	return 3
+}
+
+func (st Settings) AnonMaxAge() int {
+	if st.AnonMaxAgeDays > 0 {
+		return st.AnonMaxAgeDays
+	}
+	return 30
 }
 
 // IsFeatured：演化是否为公开示例。
@@ -49,10 +69,12 @@ func DefaultSettings() Settings {
 			"pro":      {Name: "pro", Label: "专业版", MonthlyUnits: 2000, MaxYears: 10000, MaxFamilies: 100000, MaxUploadMB: 100, PriceMonthly: 99, MaxActive: 3},
 			"studio":   {Name: "studio", Label: "工作室版", MonthlyUnits: 20000, MaxYears: 10000, MaxFamilies: 200000, MaxUploadMB: 500, PriceMonthly: 999, MaxActive: 5},
 			"internal": {Name: "internal", Label: "内部", MonthlyUnits: -1, MaxYears: 100000, MaxFamilies: 200000, MaxUploadMB: 2000, MaxActive: 10},
+			"trial":    {Name: "trial", Label: "免登录试用", MonthlyUnits: 30, MaxYears: 500, MaxFamilies: 20000, MaxUploadMB: 10, MaxActive: 1},
 		},
 		Pricing:    Pricing{PrepCellsPerUnit: 1e4, SimCellYearsPerUnit: 2e6, ExportUnits: 1},
 		Currency:   "CNY",
 		SignupPlan: "free",
+		AnonPlan:   "trial", AnonPerIPDaily: 3, AnonDailyBudget: 1000,
 	}
 }
 
@@ -70,6 +92,12 @@ func (st *Settings) validate() error {
 	}
 	if _, ok := st.Plans["internal"]; !ok {
 		return fmt.Errorf("不能删除 internal 套餐(公共与本地租户使用)")
+	}
+	if _, ok := st.Plans[st.AnonPlan]; st.AnonPlan != "" && !ok {
+		return fmt.Errorf("试用套餐 %s 不存在", st.AnonPlan)
+	}
+	if st.AnonPerIPDaily < 0 || st.AnonDailyBudget < 0 || st.AnonMaxAgeDays < 0 {
+		return fmt.Errorf("免登录试用的数值不能为负")
 	}
 	if _, ok := st.Plans[st.SignupPlan]; !ok {
 		return fmt.Errorf("自助注册套餐 %s 不存在", st.SignupPlan)

@@ -139,10 +139,14 @@ func (s *Server) adminOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	byPlan := map[string]int{}
-	var total, paid, suspended, newThisMonth int
+	var total, paid, suspended, newThisMonth, anon int
 	var mrr float64
 	for _, t := range tenants {
 		if t.ID == platform.PublicTenant {
+			continue
+		}
+		if t.IsAnonymous() { // 免登录试用账户单独计数，不算注册用户
+			anon++
 			continue
 		}
 		total++
@@ -246,7 +250,7 @@ func (s *Server) adminOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"tenants": map[string]any{"total": total, "paid": paid, "suspended": suspended, "newThisMonth": newThisMonth,
-			"active30d": len(activeT), "byPlan": byPlan},
+			"active30d": len(activeT), "byPlan": byPlan, "anonymous": anon, "anonUnitsToday": s.P.AnonUsedToday()},
 		"revenue":   map[string]any{"mrr": mrr, "currency": set.Currency},
 		"usage":     map[string]any{"month": month, "units": monthUnits, "byKind": byKind, "top": tops},
 		"jobs":      map[string]any{"total": len(jobs), "last24h": last24, "failed24h": failed24, "byStatus": status},

@@ -91,6 +91,22 @@ export async function ensureLogin() {
   return me;
 }
 
+// 需要账户才能用的页面：开放了免登录试用时自动开一个试用账户，否则跳到登录页
+export async function ensureSession() {
+  const me = await getMe();
+  if (!me.guest) return me;
+  if (await startTrial()) return getMe();
+  return ensureLogin();
+}
+
+// 开免登录试用账户；没开放或今天次数用完时返回 false
+export async function startTrial() {
+  try {
+    const r = await fetch('/v1/auth/anonymous', { method: 'POST' });
+    return r.ok;
+  } catch { return false; }
+}
+
 // 兼容旧调用
 export const ensureKey = ensureLogin;
 

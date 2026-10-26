@@ -252,7 +252,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	for _, k := range t.Keys {
 		keys = append(keys, map[string]any{"prefix": k.Prefix, "created": k.Created, "revoked": k.Revoked})
 	}
-	writeJSON(w, 200, map[string]any{"id": t.ID, "name": t.Name, "email": t.Email, "plan": s.P.PlanOf(t),
+	writeJSON(w, 200, map[string]any{"id": t.ID, "name": t.Name, "email": t.Email, "anonymous": t.IsAnonymous(), "plan": s.P.PlanOf(t),
 		"usedThisMonth": s.P.UsedThisMonth(t.ID), "activeJobs": s.P.ActiveJobs(t.ID), "keys": keys, "webhookSecret": t.WebhookSecret,
 		"engineVersion": sim.EngineVersion, "ai": s.aiStatus(),
 		"colorbands": map[string]any{"refdem": s.RefDEMPath() != ""}})

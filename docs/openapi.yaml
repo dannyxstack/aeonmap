@@ -225,6 +225,11 @@ paths:
       summary: 跳转到 Google 登录(回调 /v1/auth/google/callback)
       security: []
       responses: {"303": {description: 跳转}}
+  /v1/auth/anonymous:
+    post:
+      summary: 开免登录试用账户并写入会话 Cookie(需管理员开启"免登录试用")；已登录时直接返回当前身份
+      security: []
+      responses: {"201": {description: '{id, anonymous: true}'}, "403": {description: 未开放(code anonymous_disabled)}, "429": {description: 该 IP 今天的试用次数已达上限}}
   /v1/auth/logout:
     post:
       summary: 退出网页登录(注销会话 Cookie)

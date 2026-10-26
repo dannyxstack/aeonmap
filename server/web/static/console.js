@@ -1,4 +1,4 @@
-import { api, ensureLogin, getKey, keyed, logout, runTask } from './api.js';
+import { api, ensureSession, getKey, keyed, logout, runTask } from './api.js';
 import { t, tr, EN, LOCALE, mountLang, fmtTime } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
@@ -21,7 +21,12 @@ function renderAcct() {
   const p = S.me.plan;
   const lim = p.monthlyUnits < 0 ? t('不限') : p.monthlyUnits;
   const pct = p.monthlyUnits > 0 ? Math.min(100, S.me.usedThisMonth / p.monthlyUnits * 100) : 0;
-  $('acct').innerHTML = `<span><b>${esc(tr(S.me.name))}</b> · ${t('套餐')} ${esc(p.name)}${p.noSimulate ? ` <span class="muted">(${t('仅环境分析')})</span>` : ''}</span>
+  const trial = S.me.anonymous;
+  $('trialBar').hidden = !trial;
+  if (trial) $('trialBar').innerHTML = `${t('你正在免登录试用：每月 {0} 算力点，单次最长演化 {1} 年。登录后试用期间的世界与演化会保留在你的账户里。', p.monthlyUnits, p.maxYears)}
+    <a class="btnlink primary" href="/login.html?next=/console.html">${t('登录 / 注册')}</a>`;
+  $('btnLogout').hidden = trial;
+  $('acct').innerHTML = `<span><b>${esc(trial ? t('试用账户') : tr(S.me.name))}</b> · ${t('套餐')} ${esc(tr(p.label) || p.name)}${p.noSimulate ? ` <span class="muted">(${t('仅环境分析')})</span>` : ''}</span>
     <span>${t('本月 {0} / {1} 点', S.me.usedThisMonth, lim)} <span class="meter"><i style="width:${pct}%"></i></span></span>
     <span>${t('引擎')} ${esc(S.me.engineVersion)}</span>`;
 }
@@ -70,6 +75,11 @@ function renderJobs() {
 }
 
 function renderAccount() {
+  if (S.me.anonymous) {
+    $('account').innerHTML = `<p class="muted">${t('试用账户没有接口密钥。登录后可以创建接口密钥、用程序调用接口。')}</p>
+      <a class="btnlink primary" href="/login.html?next=/console.html">${t('登录 / 注册')}</a>`;
+    return;
+  }
   const keys = (S.me.keys || []).filter((k) => !k.revoked);
   $('account').innerHTML = `<div class="form">
     <label>${t('账户')}</label><div>${esc(S.me.email || tr(S.me.name))} <span class="muted">${S.me.id}</span></div>
@@ -403,6 +413,8 @@ function openSim(worldId) {
   S.simWorld = worldId;
   $('simWorld').textContent = worldName(worldId);
   $('simErr').textContent = '';
+  const f = $('simForm'), lim = S.me.plan?.maxYears;
+  if (lim) { f.years.max = lim; if (+f.years.value > lim) f.years.value = lim; }
   $('simDlg').showModal();
 }
 
@@ -489,7 +501,7 @@ function bind() {
 
 async function main() {
   mountLang($('langSlot'));
-  await ensureLogin();
+  await ensureSession();
   bind();
   updateUploadForm();
   await loadAll();

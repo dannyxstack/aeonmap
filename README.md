@@ -64,6 +64,12 @@ Docker：`docker compose up -d --build`(数据在 `./data`，预处理缓存在 
 - 接口密钥只给程序调用：用户在控制台"账户与接口"里自己新建/吊销。用户可在控制台删除自己的账户(连同数据)。
 - Cookie 认证的写操作只接受本站页面发起的请求(Origin 校验 + SameSite=Lax)，防跨站请求伪造。
 
+**免登录试用**：管理后台"套餐与接口配置 → 计价与接口 → 免登录试用"打开后，访客不注册也能上传、识图与演化：第一次需要计算时自动开一个匿名试用账户(会话 Cookie 绑定浏览器)。
+- 额度、单次年数、并发、上传大小按"试用套餐"限制。默认有 `trial` 套餐(每月 30 点、单次 500 年、1 个任务、10 MB，已有部署升级后也会自动出现)，可在套餐表里调整。
+- 防滥用：每个 IP 每天最多开 N 个试用账户(默认 3)；全部试用账户每天合计最多 M 点(默认 1000，0 = 不限)，用完当天只能浏览。
+- 试用用户之后用一个还没注册过的邮箱或 Google 登录时，试用账户直接转正(套餐换成自助注册套餐)，作品保留；用已有账户登录则进入那个账户，试用作品不合并。
+- 未转正的试用账户默认 30 天后连同作品自动删除。试用账户不能创建接口密钥。管理后台的用户列表默认不显示试用账户，筛选"免登录试用"可查看。
+
 **邮箱登录**：填 `MAPSIM_SMTP_HOST/PORT/USER/PASS/FROM`。任何支持 SMTP 的发信服务都可以(Resend、SendGrid、Amazon SES、Postmark、阿里云/腾讯云邮件推送等)；记得给发信域名配置 SPF/DKIM，否则容易进垃圾箱。登录链接 15 分钟有效、只能用一次；每个 IP 每小时 10 次、每个邮箱每小时 5 次。
 
 **Google 登录**：Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID(Web application)，Authorized redirect URI 填 `https://aeonmap.novakitestudio.com/v1/auth/google/callback`，把 Client ID / Secret 填进 `MAPSIM_GOOGLE_CLIENT_ID/SECRET`。OAuth 同意屏幕需要填写隐私政策 `/privacy.html` 与条款 `/terms.html` 的地址。
