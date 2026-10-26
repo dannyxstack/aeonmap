@@ -41,9 +41,9 @@ type extreme struct {
 }
 
 func (s *Server) envRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/worlds/{id}/stats", s.auth(s.withReadyWorld(s.handleStats)))
-	mux.HandleFunc("GET /v1/worlds/{id}/point", s.auth(s.withReadyWorld(s.handlePoint)))
-	mux.HandleFunc("GET /v1/worlds/{id}/monthly.bin", s.auth(s.worldFile("monthly.bin")))
+	mux.HandleFunc("GET /v1/worlds/{id}/stats", s.optAuth(s.withReadyWorld(s.handleStats)))
+	mux.HandleFunc("GET /v1/worlds/{id}/point", s.optAuth(s.withReadyWorld(s.handlePoint)))
+	mux.HandleFunc("GET /v1/worlds/{id}/monthly.bin", s.optAuth(s.worldFile("monthly.bin")))
 }
 
 func (s *Server) withReadyWorld(h func(http.ResponseWriter, *http.Request, *platform.World, *world.World)) http.HandlerFunc {

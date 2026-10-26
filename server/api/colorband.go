@@ -95,6 +95,10 @@ func tail(s string, n int) string {
 // 字段：file(PNG/JPG)；可选 bounds(JSON)、mapBox / legendBox(JSON 数组，原图像素)、stops(JSON，AI 读出的图例刻度)、refine(false 关闭范围微调)。
 func (s *Server) handleColorBands(w http.ResponseWriter, r *http.Request) {
 	t := tenantOf(r)
+	if !allow("colorbands:"+t.ID, 60, time.Hour) {
+		fail(w, 429, "rate_limited", "请求过于频繁，请稍后再试")
+		return
+	}
 	plan := s.P.PlanOf(t)
 	r.Body = http.MaxBytesReader(w, r.Body, int64(plan.MaxUploadMB)<<20+1<<20)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
@@ -136,14 +140,20 @@ func (s *Server) handleColorBands(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "internal", err.Error())
 		return
 	}
-	defer cleanup()
-	out, err := s.ColorBands(r.Context(), path, p)
-	if err != nil {
-		fail(w, 422, "colorband_failed", err.Error())
+	task, ok := s.startTask(tenantOf(r).ID, "colorbands", func(ctx context.Context) (any, error) {
+		defer cleanup()
+		out, err := s.ColorBands(ctx, path, p)
+		if err != nil {
+			return nil, &taskError{code: "colorband_failed", error: err}
+		}
+		return out, nil
+	})
+	if !ok {
+		cleanup()
+		s.taskBusy(w)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(out)
+	s.respondTask(w, r, task)
 }
 
 func saveTemp(src io.Reader, ext string) (string, func(), error) {

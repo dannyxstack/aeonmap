@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AeonMap · 价格</title>
+<meta name="description" content="AeonMap 套餐与价格：免费分析气候与资源，付费解锁历史演化与高级导出。">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="site.css">
+</head>
+<body class="site">
+<nav class="nav">
+  <a class="logo" href="/">AeonMap</a>
+  <div class="links">
+    <a href="/#features">功能</a>
+    <a href="/replay.html?world=eurasia">示例</a>
+    <a href="/pricing.html">价格</a>
+    <a href="/v1/openapi.yaml" target="_blank">接口文档</a>
+  </div>
+  <div class="spacer"></div>
+  <span id="langSlot"></span>
+  <div class="auth" id="authSlot"></div>
+</nav>
+<main class="wrap">
+  <section class="sec" style="border-top:0">
+    <h2>价格</h2>
+    <p class="sub">免费即可分析气候与资源；需要历史演化与高级导出时再升级。</p>
+    <div class="plans" id="plans"></div>
+  </section>
+  <section class="sec">
+    <h2>算力点怎么算</h2>
+    <p class="sub">每个套餐每月有一定数量的算力点，按实际计算量扣除；排队中的任务也会预先占用。</p>
+    <div class="cards" id="units"></div>
+  </section>
+  <section class="sec faq">
+    <h2>常见问题</h2>
+    <details><summary>免费版能做什么？</summary><p>上传地图，查看气候带、逐月气候、河流、资源与潜在人口，并导出这些图层；也可以回放公开的示例演化。</p></details>
+    <details><summary>算力点用完了怎么办？</summary><p>当月不能再提交新任务，已有的世界与演化仍可查看和导出。下个月额度自动恢复，也可以升级套餐。</p></details>
+    <details><summary>可以随时取消吗？</summary><p>可以。取消后到本期结束前仍可使用，之后回到免费版，你的数据会保留。</p></details>
+    <details><summary>团队或大批量使用？</summary><p>请联系我们，可以按需要定制额度、并发与私有部署。</p></details>
+  </section>
+  <footer class="foot">
+    <span>© 2026 <span data-site="operator">AeonMap</span></span>
+    <a href="/">首页</a>
+    <a href="/privacy.html">隐私政策</a>
+    <a href="/terms.html">服务条款</a>
+    <a href="#" data-site="contact">联系我们</a>
+  </footer>
+</main>
+<script type="module">
+import { initSite, renderPlans, $, t } from './site.js';
+import { fmtNum } from './i18n.js';
+const { me, site } = await initSite();
+renderPlans($('plans'), site, me);
+const p = site.pricing || {};
+const eu = 28969; // 欧亚示例的陆地格数
+$('units').innerHTML = [
+  [t('预处理(气候、水文、资源)'), t('每 {0} 个陆地格 1 点', fmtNum(p.prepCellsPerUnit || 10000)), t('同一张地图只计一次；程序升级引起的重新分析不扣点')],
+  [t('历史演化'), t('每 {0} 个"陆地格×年" 1 点', fmtNum(p.simCellYearsPerUnit || 2000000)), t('例如欧亚示例(约 2.9 万陆地格)演化 1000 年约 {0} 点', Math.ceil(eu * 1000 / (p.simCellYearsPerUnit || 2000000)))],
+  [t('导出'), t('每次 {0} 点', p.exportUnits ?? 1), t('GeoTIFF、GeoJSON、CSV 与游戏引擎资源打包下载')],
+  [t('色带识别'), t('免费'), t('自动识别分层设色地图的颜色与海拔')],
+].map(([h, v, d]) => `<div class="card2"><div class="b"><h3>${h}</h3><p style="color:var(--text);font-size:15px;margin-bottom:6px">${v}</p><p>${d}</p></div></div>`).join('');
+</script>
+</body>
+</html>

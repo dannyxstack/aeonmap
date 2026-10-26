@@ -38,6 +38,15 @@ type Plan struct {
 	MaxUploadMB  int     `json:"maxUploadMB"`
 	PriceMonthly float64 `json:"priceMonthly"`         // >0 视为付费套餐
 	NoSimulate   bool    `json:"noSimulate,omitempty"` // 只含环境分析(气候、水文、资源)，不能发起历史演化
+	MaxActive    int     `json:"maxActiveJobs,omitempty"` // 同时排队+运行的任务上限；0 = 默认 2
+}
+
+// ActiveLimit：每用户同时进行中的任务上限。
+func (p Plan) ActiveLimit() int {
+	if p.MaxActive > 0 {
+		return p.MaxActive
+	}
+	return 2
 }
 
 type KeyRec struct {
@@ -134,6 +143,7 @@ type Store struct {
 	tmod time.Time      // tenants.json 的修改时间(命令行新建租户后服务端自动重新加载)
 	set  Settings
 	seen map[string]string // 租户 → 最近一次调用接口的时间
+	sess map[string]*Session // 会话令牌哈希 → 会话
 }
 
 var ErrNotFound = errors.New("不存在")
@@ -152,6 +162,7 @@ func Open(root string) (*Store, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
+	s.loadSessions()
 	if s.ten[PublicTenant] == nil {
 		s.ten[PublicTenant] = &Tenant{ID: PublicTenant, Name: "公共", Plan: "internal", Created: now()}
 		if err := s.saveTenantsLocked(); err != nil {
@@ -284,6 +295,16 @@ func (s *Store) CreateTenant(name, plan string) (*Tenant, string, error) {
 }
 
 func (s *Store) CreateTenantFull(name, email, plan, source string) (*Tenant, string, error) {
+	return s.createTenant(name, email, plan, source, true)
+}
+
+// CreateTenantNoKey：网页登录(邮箱/Google)注册的用户不需要接口密钥，需要时在控制台自己新建。
+func (s *Store) CreateTenantNoKey(name, email, plan, source string) (*Tenant, error) {
+	t, _, err := s.createTenant(name, email, plan, source, false)
+	return t, err
+}
+
+func (s *Store) createTenant(name, email, plan, source string, withKey bool) (*Tenant, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.set.Plans[plan]; !ok {
@@ -301,6 +322,9 @@ func (s *Store) CreateTenantFull(name, email, plan, source string) (*Tenant, str
 	t := &Tenant{ID: NewID("t_"), Name: name, Email: email, Plan: plan, Source: source,
 		WebhookSecret: "whsec_" + hex.EncodeToString(sec), Created: now()}
 	s.ten[t.ID] = t
+	if !withKey {
+		return t, "", s.saveTenantsLocked()
+	}
 	key, err := s.addKeyLocked(t)
 	if err != nil {
 		return nil, "", err
@@ -319,6 +343,7 @@ func (s *Store) DeleteTenant(tenantID string) error {
 		return ErrNotFound
 	}
 	delete(s.ten, tenantID)
+	s.deleteTenantSessionsLocked(tenantID)
 	for h, id := range s.keys {
 		if id == tenantID {
 			delete(s.keys, h)
@@ -431,6 +456,9 @@ func (s *Store) UpdateTenant(tenantID string, p TenantPatch) error {
 			return fmt.Errorf("不能停用公共租户")
 		}
 		t.Suspended = *p.Suspended
+		if t.Suspended {
+			s.deleteTenantSessionsLocked(t.ID)
+		}
 	}
 	if p.QuotaOverride != nil {
 		if *p.QuotaOverride == -2 {

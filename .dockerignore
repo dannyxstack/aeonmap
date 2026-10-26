@@ -9,3 +9,4 @@ server/mapsim
 docs/*.md
 data
 tests
+.env

@@ -1,4 +1,4 @@
-import { api, ensureKey, getKey, clearKey, keyed } from './api.js';
+import { api, ensureLogin, getKey, keyed, logout, runTask } from './api.js';
 import { t, tr, EN, LOCALE, mountLang, fmtTime } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
@@ -39,9 +39,9 @@ function renderWorlds() {
       <div class="meta">${INPUT[w.input] || w.input}${w.kind === 'builtin' ? ' · ' + t('内置') : ''} · ${esc(b)}${w.landCells ? ` · ${t('{0} 个陆地格', w.landCells)}` : ''}</div>
       <div class="meta">${t('{0} 次演化', runs.length)}${w.error ? ` · <span class="err">${esc(tr(w.error).slice(0, 160))}</span>` : ''}</div>
       <div class="acts">
-        ${w.status === 'ready' ? `<a class="btnlink primary" href="/index.html?world=${w.id}">${t('查看气候与资源')}</a>` : ''}
+        ${w.status === 'ready' ? `<a class="btnlink primary" href="/replay.html?world=${w.id}">${t('查看气候与资源')}</a>` : ''}
         ${w.status === 'ready' && !S.me.plan.noSimulate ? `<button class="ghost" data-act="sim" data-id="${w.id}">${t('新建演化')}</button>` : ''}
-        ${done ? `<a class="btnlink" href="/index.html?run=${done.id}">${t('回放最近演化')}</a>` : ''}
+        ${done ? `<a class="btnlink" href="/replay.html?run=${done.id}">${t('回放最近演化')}</a>` : ''}
         ${w.status === 'ready' ? `<button class="ghost" data-act="expworld" data-id="${w.id}">${t('导出图层')}</button>` : ''}
         ${w.kind !== 'builtin' && w.tenant === S.me.id ? `<button class="ghost" data-act="del" data-id="${w.id}">${t('删除')}</button>` : ''}
       </div></div></div>`;
@@ -55,7 +55,7 @@ function renderJobs() {
     const what = [req.simulate ? t('演化 {0}年', req.simulate.years || '') : '', req.export ? t('导出') : '', !req.simulate && !req.export ? t('预处理') : ''].filter(Boolean).join(' + ');
     const r = j.result || {};
     const links = [
-      r.runId ? `<a href="/index.html?run=${r.runId}">${t('回放')}</a>` : '',
+      r.runId ? `<a href="/replay.html?run=${r.runId}">${t('回放')}</a>` : '',
       r.runId && j.status === 'succeeded' ? `<a href="#" data-act="exprun" data-run="${r.runId}" data-world="${j.world}">${t('导出…')}</a>` : '',
       r.exportUrl ? `<a href="${keyed(r.exportUrl)}">${t('下载导出包')}</a>` : '',
       r.runReused ? `<span class="muted">${t('复用已有结果')}</span>` : '',
@@ -70,9 +70,14 @@ function renderJobs() {
 }
 
 function renderAccount() {
-  const k = getKey();
+  const keys = (S.me.keys || []).filter((k) => !k.revoked);
   $('account').innerHTML = `<div class="form">
-    <label>${t('接口密钥')}</label><div><code class="key">${esc(k.slice(0, 10))}…${esc(k.slice(-4))}</code> <button class="ghost" id="copyKey">${t('复制')}</button></div>
+    <label>${t('账户')}</label><div>${esc(S.me.email || tr(S.me.name))} <span class="muted">${S.me.id}</span></div>
+    <label>${t('接口密钥')}</label><div>
+      ${keys.map((k) => `<div><code class="key">${esc(k.prefix)}…</code> <span class="muted">${fmtTime(k.created)}</span>
+        <button class="ghost" data-revoke="${esc(k.prefix)}" style="font-size:11px;padding:2px 8px">${t('吊销')}</button></div>`).join('') || `<span class="muted">${t('还没有接口密钥')}</span>`}
+      <div style="margin-top:6px"><button class="ghost" id="newKey">${t('新建接口密钥')}</button> <span class="muted">${t('程序调用时使用；网页登录不需要密钥')}</span></div>
+      <div id="newKeyBox"></div></div>
     <label>${t('回调签名密钥')}</label><div><code class="key">${esc(S.me.webhookSecret.slice(0, 12))}…</code> <button class="ghost" id="copySec">${t('复制')}</button>
       <span class="muted">${t('回调头 X-Mapsim-Signature = sha256=HMAC(密钥, "时间戳." + 请求体)')}</span></div>
     <label>${t('快速开始')}</label><pre class="full" style="white-space:pre-wrap;background:var(--panel2);padding:10px;border-radius:6px;margin:0">curl -H "Authorization: Bearer $KEY" ${location.origin}/v1/worlds
@@ -81,9 +86,30 @@ curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"
   -d '{"simulate":{"years":1000,"seed":1},"export":{"formats":["geojson","geotiff"]}}' \\
   ${location.origin}/v1/worlds/eurasia/jobs
 
-# Python: sdk/python/mapsim_client.py</pre></div>`;
-  $('copyKey').onclick = () => navigator.clipboard.writeText(k);
+# Python: sdk/python/mapsim_client.py</pre>
+    <label>${t('删除账户')}</label><div><button class="ghost" id="delMe" style="color:#e88;border-color:#5a3030">${t('删除我的账户')}</button>
+      <span class="muted">${t('连同所有世界、演化与任务一起删除，不可恢复')}</span></div></div>`;
   $('copySec').onclick = () => navigator.clipboard.writeText(S.me.webhookSecret);
+  $('delMe').onclick = async () => {
+    const want = S.me.email || S.me.id;
+    const typed = prompt(t('删除账户及其全部世界、演化与任务，不可恢复。\n请输入你的账户邮箱确认：'));
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== want.toLowerCase()) { alert(t('输入的邮箱不一致，已取消')); return; }
+    try { await api('/v1/me', { method: 'DELETE', body: { confirm: typed.trim() } }); location.href = '/'; } catch (e) { alert(e.message); }
+  };
+  $('newKey').onclick = async () => {
+    try {
+      const r = await api('/v1/keys', { method: 'POST' });
+      S.me = await api('/v1/me');
+      renderAccount();
+      $('newKeyBox').innerHTML = `<div class="newkey">${t('新密钥(只显示这一次，请妥善保存)：')}<br><code>${esc(r.key)}</code> <button class="ghost" id="copyNew">${t('复制')}</button></div>`;
+      $('copyNew').onclick = () => navigator.clipboard.writeText(r.key);
+    } catch (e) { alert(e.message); }
+  };
+  $('account').querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
+    if (!confirm(t('吊销密钥 {0}…？使用它的程序会立即失败。', b.dataset.revoke))) return;
+    try { await api(`/v1/keys/${b.dataset.revoke}`, { method: 'DELETE' }); S.me = await api('/v1/me'); renderAccount(); } catch (e) { alert(e.message); }
+  });
 }
 
 // ---- 上传 ----
@@ -142,7 +168,7 @@ async function analyze() {
   try {
     const fd = new FormData();
     fd.append('file', file);
-    const r = await api('/v1/analyze', { method: 'POST', body: fd });
+    const r = await runTask('/v1/analyze', fd);
     if ($('upFile').files[0] !== file) return; // 等待期间换了文件
     S.ai = { file, result: r };
     prefill(r);
@@ -243,7 +269,7 @@ async function detectBands() {
     if (ai?.mapBox) fd.append('mapBox', JSON.stringify(ai.mapBox));
     if (ai?.legendBox) fd.append('legendBox', JSON.stringify(ai.legendBox));
     if (ai?.legendStops?.length) fd.append('stops', JSON.stringify(ai.legendStops));
-    const r = await api('/v1/colorbands', { method: 'POST', body: fd });
+    const r = await runTask('/v1/colorbands', fd);
     if ($('upFile').files[0] !== file) return;
     S.bands = { file, result: r };
     showBands(r);
@@ -441,7 +467,7 @@ function bind() {
     e.target.classList.remove('aiFilled');
     if (e.target.name === 'name') delete e.target.dataset.auto;
   });
-  $('btnLogout').onclick = () => { clearKey(); location.reload(); };
+  $('btnLogout').onclick = logout;
   document.body.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;
@@ -463,7 +489,7 @@ function bind() {
 
 async function main() {
   mountLang($('langSlot'));
-  await ensureKey();
+  await ensureLogin();
   bind();
   updateUploadForm();
   await loadAll();

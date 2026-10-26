@@ -24,8 +24,9 @@ cd server && go build -o ../mapsim ./cmd/mapsim && cd ..
 ./mapsim
 ```
 
+- 首页：http://127.0.0.1:8765/(价格 `/pricing.html`、登录 `/login.html`、条款 `/terms.html`、隐私 `/privacy.html`)
 - 控制台：http://127.0.0.1:8765/console.html(上传地图、发起演化、下载导出包、查看用量)
-- 回放：http://127.0.0.1:8765/index.html
+- 回放：http://127.0.0.1:8765/replay.html(旧链接 `/index.html?run=…` 会自动转到这里)
 - 接口文档：http://127.0.0.1:8765/v1/openapi.yaml(文件在 `docs/openapi.yaml`)
 - 首次启动会创建本地租户，接口密钥保存在 `data/local.key`
 
@@ -38,20 +39,56 @@ Docker：`docker compose up -d --build`(数据在 `./data`，预处理缓存在 
 服务只监听 HTTP，由反向代理负责 HTTPS 证书与转发(WebSocket 回放通道 `/ws` 也经同一域名)。
 
 1. DNS：在 novakitestudio.com 下添加 `aeonmap` 的 A/AAAA 记录(或 CNAME)指向服务器。
-2. 启动服务，只让本机的代理访问：`MAPSIM_BIND=127.0.0.1 docker compose up -d --build`
+2. 首次部署先建好数据目录，并让容器以当前用户身份运行(否则 Docker 会以 root 创建 `./data`，启动时报"目录不可写")。配置写在 `.env`(模板见 `deploy/env.example`，逐项说明见下方"上线配置")：
+   ```bash
+   mkdir -p data cache
+   cp deploy/env.example .env && chmod 600 .env   # 填好 UID/GID 与各项配置
+   ```
+   然后启动(`MAPSIM_BIND=127.0.0.1` 让端口只对本机的代理开放)：`docker compose up -d --build`
 3. 反向代理：`deploy/Caddyfile` 可直接使用(自动申请证书)：`sudo caddy run --config deploy/Caddyfile`，或参照其中注释改用 Nginx。
 4. 线上请关闭管理后台里的"允许回调到内网地址"，并用环境变量 `MAPSIM_ADMIN_TOKEN` 设置足够长的管理员令牌。
 
+- 首页：https://aeonmap.novakitestudio.com/
 - 控制台：https://aeonmap.novakitestudio.com/console.html
-- 回放：https://aeonmap.novakitestudio.com/index.html
+- 回放：https://aeonmap.novakitestudio.com/replay.html
 - 管理后台：https://aeonmap.novakitestudio.com/admin.html
 - 接口文档：https://aeonmap.novakitestudio.com/v1/openapi.yaml
+
+### 上线配置(登录、安全、备份)
+
+全部通过 `.env` 里的环境变量配置，管理后台"套餐与接口配置 → 登录与安全"可查看当前状态。
+
+**账户与访客**
+- 网页用邮箱魔法链接或 Google 登录(会话 Cookie，30 天)；第一次登录自动注册，套餐为管理后台的"自助注册套餐"。需在管理后台打开"自助注册"，否则只有已存在的邮箱能登录。
+- 未登录的访客可以看首页、价格页、公共世界(内置欧亚)的气候与资源，以及管理后台"公开示例演化"里列出的演化；上传、演化、导出需要登录。
+- 接口密钥只给程序调用：用户在控制台"账户与接口"里自己新建/吊销。用户可在控制台删除自己的账户(连同数据)。
+- Cookie 认证的写操作只接受本站页面发起的请求(Origin 校验 + SameSite=Lax)，防跨站请求伪造。
+
+**邮箱登录**：填 `MAPSIM_SMTP_HOST/PORT/USER/PASS/FROM`。任何支持 SMTP 的发信服务都可以(Resend、SendGrid、Amazon SES、Postmark、阿里云/腾讯云邮件推送等)；记得给发信域名配置 SPF/DKIM，否则容易进垃圾箱。登录链接 15 分钟有效、只能用一次；每个 IP 每小时 10 次、每个邮箱每小时 5 次。
+
+**Google 登录**：Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID(Web application)，Authorized redirect URI 填 `https://aeonmap.novakitestudio.com/v1/auth/google/callback`，把 Client ID / Secret 填进 `MAPSIM_GOOGLE_CLIENT_ID/SECRET`。OAuth 同意屏幕需要填写隐私政策 `/privacy.html` 与条款 `/terms.html` 的地址。
+
+**管理后台加 Cloudflare Access**(在 Cloudflare 控制台操作)：
+1. Zero Trust → Access → Applications → Add an application → Self-hosted。
+2. Application domain 填 `aeonmap.novakitestudio.com`，路径分别添加 `admin.html` 与 `admin/v1/*`(两条)。
+3. Policy：Action = Allow，Include = Emails = 你的邮箱(登录方式选 One-time PIN 即可)。
+4. 保存后在应用的 Overview 里复制 Application Audience (AUD) Tag 填进 `MAPSIM_CF_ACCESS_AUD`；团队域名(Settings → Custom Pages 里的 `xxx.cloudflareaccess.com` 的 `xxx`)填进 `MAPSIM_CF_ACCESS_TEAM`。
+
+服务端会校验 Cloudflare 签发的身份令牌，即使有人绕过 Cloudflare 直连源站也进不了管理接口；管理员令牌仍然需要。
+
+**真实 IP**：源站只经 Cloudflare 访问时设 `MAPSIM_TRUST_CF=1`(取 `CF-Connecting-IP`，用于登录与访客限流)。此时源站最好只接受 Cloudflare 的地址(Caddy 前的防火墙或 Cloudflare Tunnel)，否则该请求头可被伪造。
+
+**吊销本地密钥**：`MAPSIM_LOCAL_TENANT=off` 时，启动会吊销 `data/local.key` 里的密钥(内部套餐、额度不限)并删除该文件，此后不再自动创建。原本地用户的世界与演化保留：在管理后台把"本地"用户的邮箱改成你的邮箱，再用邮箱或 Google 登录即可继续使用。
+
+**并发**：每个用户同时排队 + 运行的任务数有上限(管理后台套餐表"同时任务"，默认 免费 1 / 专业 3 / 工作室 5)，超出返回 429 `too_many_jobs`；AI 识图与色带识别每人同时 1 个。AI 识图与色带识别改为后台任务(`POST` 返回 202 与任务号，`GET /v1/tasks/{id}` 查询结果，或加 `?wait=1` 同步等待)，不再受 Cloudflare 100 秒请求超时限制。
+
+**自动备份**：默认每 24 小时把 `data/`(不含 `exports/` 导出包)做一份快照到 `data/backups/<时间>/`，保留 7 份；与上一份相同的文件用硬链接，不占额外空间(第一份是完整拷贝)。每份都是完整目录，恢复时停服务、把快照拷回 `data/` 即可。快照里有管理员令牌、会话与用户数据，权限为仅本用户可读；**异地备份**：用 rclone 等把最新一份快照同步到对象存储(如 Cloudflare R2)；rclone 不保留硬链接，所以只同步最新一份，例如每天 `rclone sync "data/backups/$(ls data/backups | tail -1)" r2:aeonmap-backup/latest`(R2 存储桶可开版本保留)。`MAPSIM_BACKUP=off` 关闭。
 
 ## 只做环境分析
 
 上传地图后，预处理(气候、水文、资源、潜在人口)就已完成，不需要演化即可查看与使用：
 
-- 控制台世界卡片上的"查看气候与资源"，打开 `/index.html?world=<世界ID>`：只有静态图层，侧栏是全图概况(气候带、地表覆盖、潜在人口、极值点)，点击格子显示气候图(12 个月气温与降水)和环境档案。
+- 控制台世界卡片上的"查看气候与资源"，打开 `/replay.html?world=<世界ID>`：只有静态图层，侧栏是全图概况(气候带、地表覆盖、潜在人口、极值点)，点击格子显示气候图(12 个月气温与降水)和环境档案。
 - 接口：`GET /v1/worlds/{id}/stats`(概况)、`GET /v1/worlds/{id}/point?lon=&lat=`(单点档案)、`GET /v1/worlds/{id}/monthly.bin`(逐月气候)、`/layers/{name}.tif`(单个图层)，或提交只有 `export` 的任务导出全部世界图层。
 - 管理后台的套餐表里可以关闭"允许演化"，该套餐的用户只能做环境分析(提交演化返回 403 `plan_restricted`)。
 - 旧版预处理的世界没有逐月气候：提交空任务 `{}` 即可更新(程序升级引起的重新预处理不扣点)。

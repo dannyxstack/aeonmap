@@ -248,8 +248,8 @@ function renderSettings() {
   const field = (p, k, type = 'number') => `<input data-plan="${p.name}" data-k="${k}" type="${type}" value="${esc(p[k])}" ${p.name === 'internal' && k === 'name' ? 'readonly' : ''}>`;
   $('tab-settings').innerHTML = `
     <div class="panel"><h2 style="margin-top:0">${t('套餐')} <span class="muted">${t('每月额度 -1 表示不限；月费 > 0 的套餐计为付费用户')}</span></h2>
-      <table class="jobs plans"><thead><tr><th>${t('标识')}</th><th>${t('显示名')}</th><th>${t('月费')}</th><th>${t('每月算力点')}</th><th>${t('单次最长年数')}</th><th>${t('家族上限')}</th><th>${t('上传上限 MB')}</th><th>${t('允许演化')}</th><th></th></tr></thead>
-      <tbody>${rows.map((p) => `<tr><td>${field(p, 'name', 'text')}</td><td>${field(p, 'label', 'text')}</td><td>${field(p, 'priceMonthly')}</td><td>${field(p, 'monthlyUnits')}</td><td>${field(p, 'maxYears')}</td><td>${field(p, 'maxFamilies')}</td><td>${field(p, 'maxUploadMB')}</td>
+      <table class="jobs plans"><thead><tr><th>${t('标识')}</th><th>${t('显示名')}</th><th>${t('月费')}</th><th>${t('每月算力点')}</th><th>${t('单次最长年数')}</th><th>${t('家族上限')}</th><th>${t('上传上限 MB')}</th><th>${t('同时任务')}</th><th>${t('允许演化')}</th><th></th></tr></thead>
+      <tbody>${rows.map((p) => `<tr><td>${field(p, 'name', 'text')}</td><td>${field(p, 'label', 'text')}</td><td>${field(p, 'priceMonthly')}</td><td>${field(p, 'monthlyUnits')}</td><td>${field(p, 'maxYears')}</td><td>${field(p, 'maxFamilies')}</td><td>${field(p, 'maxUploadMB')}</td><td>${field(p, 'maxActiveJobs')}</td>
         <td style="text-align:center"><input type="checkbox" data-plan="${p.name}" data-k="allowSim" ${p.noSimulate ? '' : 'checked'} style="width:auto" title="${t('关闭后该套餐只能做环境分析(气候、水文、资源)，不能发起历史演化')}"></td>
         <td>${p.name !== 'internal' ? `<button class="ghost" data-delplan="${p.name}" style="font-size:11px">${t('删除')}</button>` : ''}</td></tr>`).join('')}</tbody></table>
       <button class="ghost" id="addPlan" style="margin-top:8px">${t('新增套餐')}</button>
@@ -263,10 +263,14 @@ function renderSettings() {
         <label>${t('自助注册')}</label><div><label style="color:var(--text)"><input type="checkbox" id="pSignup" ${st.allowSignup ? 'checked' : ''} style="width:auto"> ${t('开放 POST /v1/signup')}</label>
           ${t('新用户套餐')} <select id="pSignupPlan">${Object.values(st.plans).map((p) => `<option value="${p.name}" ${p.name === st.signupPlan ? 'selected' : ''}>${esc(planLabel(p, p.name))}</option>`).join('')}</select>
           <span class="muted">${t('每个 IP 每小时最多 5 次')}</span></div>
+        <label>${t('公开示例演化')}</label><div><textarea id="pFeatured" rows="3" style="width:100%" placeholder="20261019-140518-367cac">${esc((st.featuredRuns || []).join('\n'))}</textarea>
+          <span class="muted">${t('每行一个演化 ID；未登录的访客也能回放这些演化(首页"查看示例"、价格页等)')}</span></div>
         <label>${t('内网回调')}</label><label style="color:var(--text)"><input type="checkbox" id="pPriv" ${st.allowPrivateWebhooks ? 'checked' : ''} style="width:auto"> ${t('允许回调到内网/本机地址(仅本地开发，生产环境请关闭以防 SSRF)')}</label>
       </div>
     </div>
-    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button id="saveSettings">${t('保存配置')}</button><span id="saveMsg" class="muted"></span></div>`;
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button id="saveSettings">${t('保存配置')}</button><span id="saveMsg" class="muted"></span></div>
+    <div class="panel" style="margin-top:14px" id="sysPanel"></div>`;
+  renderSystem();
   $('addPlan').onclick = () => {
     const name = prompt(t('新套餐标识(英文，如 team)'));
     if (!name) return;
@@ -275,6 +279,25 @@ function renderSettings() {
   };
   $('tab-settings').querySelectorAll('[data-delplan]').forEach((b) => b.onclick = () => { delete st.plans[b.dataset.delplan]; renderSettings(); });
   $('saveSettings').onclick = saveSettings;
+}
+
+// 登录方式、安全与备份(只读：在服务器的环境变量里配置)
+async function renderSystem() {
+  let y;
+  try { y = await api('/admin/v1/system'); } catch { return; }
+  y.backups = y.backups || [];
+  const ok = (b) => (b ? `<span style="color:#7fd6a0">${t('已启用')}</span>` : `<span class="muted">${t('未配置')}</span>`);
+  $('sysPanel').innerHTML = `<h2 style="margin-top:0">${t('登录与安全')} <span class="muted">${t('只读，在服务器的环境变量里配置(见 README)')}</span></h2>
+    <div class="form">
+      <label>${t('对外地址')}</label><div>${esc(y.publicURL) || `<span class="err">${t('未设置 MAPSIM_PUBLIC_URL：登录邮件与 Google 回调地址会按请求推断')}</span>`}</div>
+      <label>${t('邮箱登录')}</label><div>${ok(y.emailLogin)} ${y.smtpHost ? `<span class="muted">SMTP ${esc(y.smtpHost)}</span>` : ''}${y.authDev ? ` <span class="err">${t('开发模式：登录链接会写进日志并直接返回，生产环境请关闭 MAPSIM_AUTH_DEV')}</span>` : ''}</div>
+      <label>${t('Google 登录')}</label><div>${ok(y.googleLogin)}</div>
+      <label>Cloudflare Access</label><div>${ok(y.cfAccess)} <span class="muted">${t('管理接口额外校验 Cloudflare Access 身份令牌')}</span></div>
+      <label>${t('真实 IP')}</label><div>${y.trustCF ? t('取 CF-Connecting-IP') : t('取反向代理的 X-Forwarded-For')}</div>
+      <label>${t('本地密钥')}</label><div>${y.localTenantOff ? ok(true) + ' ' + t('已关闭(MAPSIM_LOCAL_TENANT=off)') : `<span class="err">${t('仍在使用 data/local.key(内部套餐、额度不限)；生产环境请设 MAPSIM_LOCAL_TENANT=off')}</span>`}</div>
+      <label>${t('自动备份')}</label><div>${y.backupOff ? `<span class="err">${t('已关闭')}</span>` : `${t('{0} 份', y.backups.length)}${y.backups.length ? ` · ${t('最近')} ${esc(y.backups[y.backups.length - 1])}` : ''} <span class="muted">${esc(y.backupDir)}</span>`}</div>
+      <label>${t('运营方 / 联系邮箱')}</label><div>${esc(y.operator) || '—'} / ${esc(y.contact) || '—'}</div>
+    </div>`;
 }
 
 async function saveSettings() {
@@ -295,6 +318,7 @@ async function saveSettings() {
   st.allowSignup = $('pSignup').checked;
   st.signupPlan = rename[$('pSignupPlan').value] || $('pSignupPlan').value;
   st.allowPrivateWebhooks = $('pPriv').checked;
+  st.featuredRuns = $('pFeatured').value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
   try {
     S.settings = await api('/admin/v1/settings', { method: 'PUT', body: st });
     renderSettings();
@@ -404,7 +428,7 @@ async function testAI(id, file) {
 }
 
 // ---------------- 审计 ----------------
-const ACTIONS = L({ 'tenant.create': '新建用户', 'tenant.update': '修改用户', 'tenant.signup': '自助注册', 'key.add': '新增密钥', 'key.revoke': '吊销密钥', 'settings.update': '修改配置', 'job.cancel': '取消任务', 'tenant.delete': '删除用户', 'ai.update': '修改 AI 配置', 'ai.test': '测试 AI 识图' });
+const ACTIONS = L({ 'tenant.create': '新建用户', 'tenant.update': '修改用户', 'tenant.signup': '自助注册', 'key.add': '新增密钥', 'key.revoke': '吊销密钥', 'settings.update': '修改配置', 'job.cancel': '取消任务', 'tenant.delete': '删除用户', 'ai.update': '修改 AI 配置', 'ai.test': '测试 AI 识图', 'tenant.self_delete': '自助删除账户' });
 async function renderAudit() {
   const rows = await api('/admin/v1/audit');
   $('tab-audit').innerHTML = `<div class="panel"><table class="jobs"><thead><tr><th>${t('时间')}</th><th>${t('操作')}</th><th>${t('对象')}</th><th>${t('详情')}</th><th>IP</th></tr></thead><tbody>

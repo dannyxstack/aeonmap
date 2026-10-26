@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AeonMap · 登录</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="site.css">
+</head>
+<body class="site">
+<nav class="nav">
+  <a class="logo" href="/">AeonMap</a>
+  <div class="spacer"></div>
+  <span id="langSlot"></span>
+</nav>
+<main>
+  <div class="authbox">
+    <h1>登录或注册</h1>
+    <p class="muted">输入邮箱，我们会发一封带登录链接的邮件；第一次登录即自动注册。</p>
+    <div id="err"></div>
+    <form id="emailForm">
+      <input type="email" name="email" placeholder="you@example.com" required autocomplete="email">
+      <button class="full" type="submit" id="sendBtn">发送登录链接</button>
+    </form>
+    <div id="sent"></div>
+    <div id="googleBox" hidden>
+      <div class="or">或</div>
+      <a class="btnlink full" id="googleBtn" href="/v1/auth/google">使用 Google 登录</a>
+    </div>
+    <details style="margin-top:18px;font-size:13px" class="muted">
+      <summary>开发者：使用接口密钥</summary>
+      <form id="keyForm" style="margin-top:8px;display:flex;gap:6px">
+        <input name="k" placeholder="msk_..." style="flex:1;padding:6px 8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--text)">
+        <button>确定</button>
+      </form>
+    </details>
+    <p class="muted" style="font-size:12px;margin-top:20px" id="agree"></p>
+  </div>
+</main>
+<script type="module">
+import { initSite, $, esc, t } from './site.js';
+import { LANG } from './i18n.js';
+import { setKey, getMe } from './api.js';
+const q = new URLSearchParams(location.search);
+const next = q.get('next') || '/console.html';
+const { me, site } = await initSite();
+if (!me.guest) location.replace(next);
+$('agree').innerHTML = t('继续即表示你同意{0}与{1}。', `<a href="/terms.html">${t('服务条款')}</a>`, `<a href="/privacy.html">${t('隐私政策')}</a>`);
+const ERR = {
+  link_expired: '登录链接已失效或已使用，请重新获取。', signup_closed: '暂未开放注册，请联系我们开通账户。',
+  account_suspended: '该账户已停用，请联系我们。', google_disabled: '暂未开放 Google 登录。', google_state: 'Google 登录已过期，请重试。',
+  google_denied: '你取消了 Google 授权。', google_failed: 'Google 登录失败，请重试或改用邮箱登录。', internal: '服务暂时不可用，请稍后再试。',
+};
+if (q.get('error')) $('err').innerHTML = `<div class="bad">${esc(t(ERR[q.get('error')] || '登录失败，请重试。'))}</div>`;
+if (site.auth.google) { $('googleBox').hidden = false; $('googleBtn').href = '/v1/auth/google?next=' + encodeURIComponent(next); }
+if (!site.auth.email) { $('emailForm').hidden = true; if (!site.auth.google) $('err').innerHTML = `<div class="bad">${t('登录方式尚未配置，请联系管理员。')}</div>`; }
+$('emailForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const email = e.target.email.value.trim();
+  $('sendBtn').disabled = true;
+  $('err').innerHTML = '';
+  try {
+    const r = await fetch('/v1/auth/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, next, lang: LANG }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error?.code === 'rate_limited' ? t('发送过于频繁，请稍后再试') : d.error?.code === 'signup_closed' ? t(ERR.signup_closed) : t('发送失败，请稍后再试'));
+    $('emailForm').hidden = true;
+    $('sent').innerHTML = `<div class="ok">${t('登录链接已发送到 {0}，15 分钟内有效。没有收到请检查垃圾邮件。', `<b>${esc(email)}</b>`)}</div>` +
+      (d.devLink ? `<p class="muted" style="font-size:12px">${t('开发模式(未配置发信)：')}<a href="${esc(d.devLink)}">${t('直接登录')}</a></p>` : '');
+  } catch (err) {
+    $('err').innerHTML = `<div class="bad">${esc(err.message)}</div>`;
+  } finally { $('sendBtn').disabled = false; }
+};
+$('keyForm').onsubmit = async (e) => {
+  e.preventDefault();
+  setKey(e.target.k.value.trim());
+  const m = await getMe().catch(() => ({ guest: true }));
+  if (m.guest) $('err').innerHTML = `<div class="bad">${t('密钥无效，请重新输入。')}</div>`; else location.replace(next);
+};
+</script>
+</body>
+</html>

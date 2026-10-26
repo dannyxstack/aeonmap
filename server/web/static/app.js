@@ -1,5 +1,5 @@
 import { World, decodeFrame, SCATTERED, baseName, polityTitle } from './data.js';
-import { api, ensureKey, getKey } from './api.js';
+import { api, getMe, getKey } from './api.js';
 import { MapView, buildLayers, GROUP_ORDER } from './map.js';
 import { lutCss, polityColor } from './colors.js';
 import { t, tr, EN, mountLang, fmtNum as fmt, fmtPop } from './i18n.js';
@@ -514,7 +514,7 @@ function enterWorldMode() {
   setStatus(t('环境分析 · 尚未演化'));
   const bp = $('btnParams');
   bp.textContent = t('开始演化…');
-  if (S.me?.plan?.noSimulate) bp.hidden = true;
+  if (S.me?.guest || S.me?.plan?.noSimulate) bp.hidden = true;
 }
 
 // ---------------- 指标曲线与事件 ----------------
@@ -775,7 +775,12 @@ function bindControls() {
 
 async function main() {
   mountLang($('langSlot'));
-  S.me = await ensureKey();
+  S.me = await getMe(); // 未登录也能看公共世界与公开示例
+  if (S.me.guest) {
+    $('btnParams').hidden = true;
+    $('consoleLink').textContent = t('登录 / 注册');
+    $('consoleLink').href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+  }
   const pick = await refreshRuns();
   if (!pick) return;
   S.worldMode = !!pick.world;

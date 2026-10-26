@@ -6,12 +6,35 @@ services:
   mapsim:
     build: .
     image: mapsim:latest
-    # 以宿主机用户身份运行，./runs 与 ./cache 里的文件归属不变
+    # 以宿主机用户身份运行，./data 与 ./cache 里的文件归属不变。
+    # bash 的 $UID 不会导出给 docker compose，请写进 .env：printf 'UID=%s\nGID=%s\n' $(id -u) $(id -g) > .env
+    # ./data、./cache 须事先 mkdir 且归该用户所有，否则 Docker 会以 root 创建，启动时报"目录不可写"
     user: "${UID:-1000}:${GID:-1000}"
     ports:
       # 放在反向代理(见 deploy/Caddyfile)后面时设 MAPSIM_BIND=127.0.0.1，只让代理访问
       - "${MAPSIM_BIND:-0.0.0.0}:${MAPSIM_PORT:-8765}:8765"
     volumes:
-      - ./data:/app/data     # 租户、世界、任务、演化回放、导出包、用量
+      - ./data:/app/data     # 租户、世界、任务、演化回放、导出包、用量；自动备份在 ./data/backups
       - ./cache:/app/cache   # 预处理缓存
+    # 线上配置写在 .env 里(不入库)，未设置的项为空即不启用；说明见 README"上线配置"
+    environment:
+      MAPSIM_ADMIN_TOKEN: ${MAPSIM_ADMIN_TOKEN:-}
+      MAPSIM_PUBLIC_URL: ${MAPSIM_PUBLIC_URL:-}
+      MAPSIM_LOCAL_TENANT: ${MAPSIM_LOCAL_TENANT:-}
+      MAPSIM_TRUST_CF: ${MAPSIM_TRUST_CF:-}
+      MAPSIM_CF_ACCESS_TEAM: ${MAPSIM_CF_ACCESS_TEAM:-}
+      MAPSIM_CF_ACCESS_AUD: ${MAPSIM_CF_ACCESS_AUD:-}
+      MAPSIM_SMTP_HOST: ${MAPSIM_SMTP_HOST:-}
+      MAPSIM_SMTP_PORT: ${MAPSIM_SMTP_PORT:-}
+      MAPSIM_SMTP_USER: ${MAPSIM_SMTP_USER:-}
+      MAPSIM_SMTP_PASS: ${MAPSIM_SMTP_PASS:-}
+      MAPSIM_SMTP_FROM: ${MAPSIM_SMTP_FROM:-}
+      MAPSIM_GOOGLE_CLIENT_ID: ${MAPSIM_GOOGLE_CLIENT_ID:-}
+      MAPSIM_GOOGLE_CLIENT_SECRET: ${MAPSIM_GOOGLE_CLIENT_SECRET:-}
+      MAPSIM_AUTH_DEV: ${MAPSIM_AUTH_DEV:-}
+      MAPSIM_SITE_OPERATOR: ${MAPSIM_SITE_OPERATOR:-}
+      MAPSIM_CONTACT_EMAIL: ${MAPSIM_CONTACT_EMAIL:-}
+      MAPSIM_BACKUP: ${MAPSIM_BACKUP:-}
+      MAPSIM_BACKUP_HOURS: ${MAPSIM_BACKUP_HOURS:-}
+      MAPSIM_BACKUP_KEEP: ${MAPSIM_BACKUP_KEEP:-}
     restart: unless-stopped

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AeonMap · 上传一张地图，推演一部文明史</title>
+<meta name="description" content="AeonMap 根据地形推算气候带、河流与资源，再推演家族繁衍、部落与王国的兴衰。适合世界观创作、跑团与游戏开发。">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="site.css">
+</head>
+<body class="site">
+<nav class="nav">
+  <a class="logo" href="/">AeonMap</a>
+  <div class="links">
+    <a href="#features">功能</a>
+    <a href="/replay.html?world=eurasia">示例</a>
+    <a href="/pricing.html">价格</a>
+    <a href="/v1/openapi.yaml" target="_blank">接口文档</a>
+  </div>
+  <div class="spacer"></div>
+  <span id="langSlot"></span>
+  <div class="auth" id="authSlot"></div>
+</nav>
+
+<main class="wrap">
+  <section class="hero">
+    <div>
+      <h1>上传一张地图，推演一部文明史</h1>
+      <p class="lead">AeonMap 根据地形推算气候带、河流与资源，再让成千上万个家族在这片土地上繁衍、迁徙、征服，演化出部落、王国与帝国的兴衰。</p>
+      <div class="cta">
+        <a class="btnlink primary big" href="/login.html" data-cta>免费开始</a>
+        <a class="btnlink big" href="/replay.html?world=eurasia">查看示例</a>
+      </div>
+      <p class="muted" style="font-size:13px;margin-top:14px">支持高程图、分层设色地形图与手绘草图，任意经纬度范围、南北半球。</p>
+    </div>
+    <div class="shot"><img src="/v1/worlds/eurasia/preview/koppen.png" alt="柯本气候带"></div>
+  </section>
+
+  <section class="sec" id="features">
+    <h2>从地形到历史</h2>
+    <p class="sub">四个层次，每一层都可以单独查看与导出。</p>
+    <div class="cards">
+      <div class="card2"><div class="img" style="background-image:url('/v1/worlds/eurasia/preview/koppen.png')"></div>
+        <div class="b"><h3>气候与水文</h3><p>柯本气候带、逐月气温与降水、河网与流量，自动区分南北半球。</p></div></div>
+      <div class="card2"><div class="img" style="background-image:url('/v1/worlds/eurasia/preview/density.png')"></div>
+        <div class="b"><h3>资源与承载力</h3><p>旱作、水稻、灌溉、牧草、渔猎……推算每块土地能养活多少人、适合哪种生计。</p></div></div>
+      <div class="card2"><div class="img" style="background-image:url('/v1/worlds/eurasia/preview/mode.png')"></div>
+        <div class="b"><h3>文明演化</h3><p>家族繁衍与变异、征服与叛乱、部落与王国、突然崛起的超级帝国，逐年回放。</p></div></div>
+      <div class="card2"><div class="img" style="background-image:url('/v1/worlds/eurasia/preview/discharge.png')"></div>
+        <div class="b"><h3>标准格式导出</h3><p>GeoTIFF、GeoJSON、CSV 与游戏引擎高程图；也可以通过接口接入你的工具链。</p></div></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>三步得到你的世界</h2>
+    <p class="sub">不需要安装软件，也不需要地理背景。</p>
+    <div class="steps">
+      <div class="step"><h3>上传地图</h3><p>高程图、分层设色地形图或手绘草图都可以；颜色与海拔的对应可以自动识别。</p></div>
+      <div class="step"><h3>查看气候与资源</h3><p>几十秒后得到气候带、河流、资源与潜在人口，点击任意位置查看气候图。</p></div>
+      <div class="step"><h3>演化历史</h3><p>选择年数与参数，在时间轴上回放每一年的政权、人口与战争。</p></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>适合谁</h2>
+    <div class="who">
+      <div><b>世界观创作者</b>为奇幻或科幻大陆生成合理的气候、物产与历史脉络。</div>
+      <div><b>跑团主持人</b>快速得到势力分布、边界与历史事件，作为冒险背景。</div>
+      <div><b>独立游戏开发</b>导出高程图与地表贴图，直接用于 Unity / Unreal。</div>
+      <div><b>历史与地理教学</b>直观展示地形、气候与文明分布之间的关系。</div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>价格</h2>
+    <p class="sub">免费即可分析气候与资源；需要历史演化与高级导出时再升级。</p>
+    <div class="plans" id="plans"></div>
+    <p class="muted" style="font-size:13px;margin-top:14px"><a href="/pricing.html">查看价格详情与算力点说明 →</a></p>
+  </section>
+
+  <section class="sec faq">
+    <h2>常见问题</h2>
+    <details><summary>需要什么样的地图？</summary><p>等距经纬度投影的高程图(PNG/TIFF/GeoTIFF)、带色带的分层设色地形图，或用几种颜色画出海、河、山的草图。填写地图的经纬度范围即可，南北半球都支持。</p></details>
+    <details><summary>结果准确吗？</summary><p>气候与资源由概念模型推算，适合创作与教学；大尺度规律(气候带、季风、雨影、沙漠)可信，局部数值仅供参考。历史演化是带随机性的模拟，同样的参数与随机种子总是得到同样的历史。</p></details>
+    <details><summary>我上传的地图和生成的结果归谁？</summary><p>归你所有。我们只为提供服务而存储与处理它们，你可以随时删除。详见服务条款与隐私政策。</p></details>
+    <details><summary>可以用在商业项目里吗？</summary><p>可以。导出的数据与图片可以用于你的游戏、书籍或其他作品。</p></details>
+  </section>
+
+  <footer class="foot">
+    <span>© 2026 <span data-site="operator">AeonMap</span></span>
+    <a href="/pricing.html">价格</a>
+    <a href="/privacy.html">隐私政策</a>
+    <a href="/terms.html">服务条款</a>
+    <a href="#" data-site="contact">联系我们</a>
+  </footer>
+</main>
+<script type="module">
+import { initSite, renderPlans, $ } from './site.js';
+const { me, site } = await initSite();
+renderPlans($('plans'), site, me);
+</script>
+</body>
+</html>

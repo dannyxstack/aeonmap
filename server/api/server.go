@@ -39,6 +39,9 @@ type Server struct {
 	OpenAPI []byte
 	// AdminToken 管理后台令牌；为空时管理接口全部拒绝
 	AdminToken string
+	Auth       AuthConfig
+	CFAccess   *CFAccess // 配置后，管理接口还要求 Cloudflare Access 签发的身份令牌
+	tasks      *taskStore
 
 	mu      sync.Mutex
 	clients map[*client]bool
@@ -48,6 +51,7 @@ type Server struct {
 type client struct {
 	conn   *websocket.Conn
 	tenant string
+	ip     string
 	send   chan wsMsg
 }
 
@@ -57,7 +61,8 @@ type wsMsg struct {
 }
 
 func NewServer(e *Engine, r *Runner, p *platform.Store, static fs.FS, openapi []byte) *Server {
-	s := &Server{E: e, R: r, P: p, Static: static, OpenAPI: openapi, clients: map[*client]bool{}}
+	s := &Server{E: e, R: r, P: p, Static: static, OpenAPI: openapi, clients: map[*client]bool{}, tasks: newTaskStore(),
+		Auth: AuthConfigFromEnv(), CFAccess: CFAccessFromEnv()}
 	e.SetStatusHook(func(st Status) { s.broadcast(st.Tenant, st) })
 	r.OnJob = func(j platform.Job) { s.broadcast(j.Tenant, map[string]any{"type": "job", "job": j}) }
 	return s
@@ -98,20 +103,17 @@ func apiKey(r *http.Request) string {
 	return r.URL.Query().Get("key") // 浏览器下载链接与 WebSocket 使用
 }
 
-func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		t, ok := s.P.Authenticate(apiKey(r))
-		if !ok {
-			fail(w, 401, "unauthorized", "缺少或无效的接口密钥(Authorization: Bearer msk_...)")
-			return
-		}
-		h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, t)))
-	}
-}
-
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServer(http.FS(s.Static)))
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		// 回放页原来是 /index.html(文件服务会把它规范成 /)：旧链接 /?run=… /?world=… 转到 /replay.html
+		if q := r.URL.Query(); q.Get("run") != "" || q.Get("world") != "" {
+			http.Redirect(w, r, "/replay.html?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
+		http.ServeFileFS(w, r, s.Static, "home.html") // 首页
+	})
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "engineVersion": sim.EngineVersion})
 	})
@@ -120,22 +122,22 @@ func (s *Server) Handler() http.Handler {
 		w.Write(s.OpenAPI)
 	})
 	mux.HandleFunc("GET /v1/params", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, ParamSchema()) })
-	mux.HandleFunc("GET /v1/me", s.auth(s.handleMe))
+	mux.HandleFunc("GET /v1/me", s.optAuth(s.handleMe))
 	mux.HandleFunc("GET /v1/usage", s.auth(s.handleUsage))
 
-	mux.HandleFunc("GET /v1/worlds", s.auth(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /v1/worlds", s.optAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"worlds": s.P.Worlds(tenantOf(r).ID)})
 	}))
 	mux.HandleFunc("POST /v1/worlds", s.auth(s.handleCreateWorld))
-	mux.HandleFunc("GET /v1/worlds/{id}", s.auth(s.withWorld(func(w http.ResponseWriter, r *http.Request, pw *platform.World) {
+	mux.HandleFunc("GET /v1/worlds/{id}", s.optAuth(s.withWorld(func(w http.ResponseWriter, r *http.Request, pw *platform.World) {
 		writeJSON(w, 200, pw)
 	})))
 	mux.HandleFunc("DELETE /v1/worlds/{id}", s.auth(s.handleDeleteWorld))
-	mux.HandleFunc("GET /v1/worlds/{id}/manifest", s.auth(s.worldFile("manifest")))
-	mux.HandleFunc("GET /v1/worlds/{id}/cells.bin", s.auth(s.worldFile("cells.bin")))
-	mux.HandleFunc("GET /v1/worlds/{id}/rivers.geojson", s.auth(s.worldFile("rivers.geojson")))
-	mux.HandleFunc("GET /v1/worlds/{id}/preview/{name}", s.auth(s.worldFile("preview")))
-	mux.HandleFunc("GET /v1/worlds/{id}/layers/{name}", s.auth(s.withWorld(s.handleLayer)))
+	mux.HandleFunc("GET /v1/worlds/{id}/manifest", s.optAuth(s.worldFile("manifest")))
+	mux.HandleFunc("GET /v1/worlds/{id}/cells.bin", s.optAuth(s.worldFile("cells.bin")))
+	mux.HandleFunc("GET /v1/worlds/{id}/rivers.geojson", s.optAuth(s.worldFile("rivers.geojson")))
+	mux.HandleFunc("GET /v1/worlds/{id}/preview/{name}", s.optAuth(s.worldFile("preview")))
+	mux.HandleFunc("GET /v1/worlds/{id}/layers/{name}", s.optAuth(s.withWorld(s.handleLayer)))
 	mux.HandleFunc("POST /v1/worlds/{id}/jobs", s.auth(s.handleSubmit))
 
 	mux.HandleFunc("GET /v1/jobs", s.auth(func(w http.ResponseWriter, r *http.Request) {
@@ -144,10 +146,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/jobs/{id}", s.auth(s.handleJob))
 	mux.HandleFunc("DELETE /v1/jobs/{id}", s.auth(s.handleCancelJob))
 
-	mux.HandleFunc("GET /v1/runs", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"runs": s.E.ListRuns(tenantOf(r).ID, r.URL.Query().Get("world"))})
+	mux.HandleFunc("GET /v1/runs", s.optAuth(func(w http.ResponseWriter, r *http.Request) {
+		t := tenantOf(r)
+		out := []store.RunMeta{}
+		for _, m := range s.E.ListRuns("", r.URL.Query().Get("world")) {
+			if s.runVisible(t.ID, &m) {
+				out = append(out, m)
+			}
+		}
+		writeJSON(w, 200, map[string]any{"runs": out})
 	}))
-	mux.HandleFunc("GET /v1/runs/{id}", s.auth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
+	mux.HandleFunc("GET /v1/runs/{id}", s.optAuth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
 		writeJSON(w, 200, m)
 	})))
 	mux.HandleFunc("DELETE /v1/runs/{id}", s.auth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
@@ -161,7 +170,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, 200, map[string]any{"deleted": m.ID})
 	})))
-	mux.HandleFunc("GET /v1/runs/{id}/metrics", s.auth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
+	mux.HandleFunc("GET /v1/runs/{id}/metrics", s.optAuth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
 		ms, err := store.ReadMetrics(filepath.Join(s.E.RunsDir, m.ID))
 		if err != nil {
 			fail(w, 404, "not_found", err.Error())
@@ -172,7 +181,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, 200, ms)
 	})))
-	mux.HandleFunc("GET /v1/runs/{id}/events", s.auth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
+	mux.HandleFunc("GET /v1/runs/{id}/events", s.optAuth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
 		from, _ := strconv.Atoi(r.URL.Query().Get("from"))
 		to, err := strconv.Atoi(r.URL.Query().Get("to"))
 		if err != nil {
@@ -188,13 +197,17 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, 200, ev)
 	})))
-	mux.HandleFunc("GET /v1/runs/{id}/polities", s.auth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
+	mux.HandleFunc("GET /v1/runs/{id}/polities", s.optAuth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
 		http.ServeFile(w, r, filepath.Join(s.E.RunsDir, m.ID, "polities.json"))
 	})))
-	mux.HandleFunc("GET /v1/runs/{id}/frames/{year}", s.auth(s.withRun(s.handleFrame)))
-	mux.HandleFunc("GET /v1/runs/{id}/roads", s.auth(s.withRun(s.handleRoads)))
-	mux.HandleFunc("GET /v1/runs/{id}/borders", s.auth(s.withRun(s.handleBorders)))
-	mux.HandleFunc("GET /v1/runs/{id}/inspect", s.auth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
+	mux.HandleFunc("GET /v1/runs/{id}/frames/{year}", s.optAuth(s.withRun(s.handleFrame)))
+	mux.HandleFunc("GET /v1/runs/{id}/roads", s.optAuth(s.withRun(s.handleRoads)))
+	mux.HandleFunc("GET /v1/runs/{id}/borders", s.optAuth(s.withRun(s.handleBorders)))
+	mux.HandleFunc("GET /v1/runs/{id}/inspect", s.optAuth(s.withRun(func(w http.ResponseWriter, r *http.Request, m *store.RunMeta) {
+		if isGuest(tenantOf(r)) && !allow("inspect:"+clientIP(r), 30, time.Minute) { // 重算较耗 CPU，访客限流
+			fail(w, 429, "rate_limited", "请求过于频繁，请稍后再试")
+			return
+		}
 		year, _ := strconv.Atoi(r.URL.Query().Get("year"))
 		cell, _ := strconv.Atoi(r.URL.Query().Get("cell"))
 		var out any
@@ -209,6 +222,8 @@ func (s *Server) Handler() http.Handler {
 	s.adminRoutes(mux)
 	s.aiRoutes(mux)
 	s.envRoutes(mux)
+	s.authRoutes(mux)
+	s.taskRoutes(mux)
 	mux.HandleFunc("POST /v1/colorbands", s.auth(s.handleColorBands))
 	return logRequests(mux)
 }
@@ -227,12 +242,18 @@ func logRequests(h http.Handler) http.Handler {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	t := tenantOf(r)
+	if isGuest(t) {
+		set := s.P.Settings()
+		writeJSON(w, 200, map[string]any{"guest": true, "plan": set.Plans[set.SignupPlan], "engineVersion": sim.EngineVersion,
+			"ai": map[string]any{"enabled": false}, "colorbands": map[string]any{"refdem": false}})
+		return
+	}
 	keys := make([]map[string]any, 0)
 	for _, k := range t.Keys {
 		keys = append(keys, map[string]any{"prefix": k.Prefix, "created": k.Created, "revoked": k.Revoked})
 	}
-	writeJSON(w, 200, map[string]any{"id": t.ID, "name": t.Name, "plan": s.P.PlanOf(t),
-		"usedThisMonth": s.P.UsedThisMonth(t.ID), "keys": keys, "webhookSecret": t.WebhookSecret,
+	writeJSON(w, 200, map[string]any{"id": t.ID, "name": t.Name, "email": t.Email, "plan": s.P.PlanOf(t),
+		"usedThisMonth": s.P.UsedThisMonth(t.ID), "activeJobs": s.P.ActiveJobs(t.ID), "keys": keys, "webhookSecret": t.WebhookSecret,
 		"engineVersion": sim.EngineVersion, "ai": s.aiStatus(),
 		"colorbands": map[string]any{"refdem": s.RefDEMPath() != ""}})
 }
@@ -495,6 +516,11 @@ func (s *Server) submitError(w http.ResponseWriter, err error) {
 		fail(w, 402, "quota_exceeded", err.Error())
 		return
 	}
+	var be *busyError
+	if errors.As(err, &be) {
+		fail(w, 429, "too_many_jobs", err.Error())
+		return
+	}
 	var pe *planError
 	if errors.As(err, &pe) {
 		fail(w, 403, "plan_restricted", err.Error())
@@ -585,8 +611,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) withRun(h func(http.ResponseWriter, *http.Request, *store.RunMeta)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m, err := readRunMeta(filepath.Join(s.E.RunsDir, filepath.Base(r.PathValue("id"))))
-		t := tenantOf(r)
-		if err != nil || (m.Tenant != t.ID && m.Tenant != platform.PublicTenant) {
+		if err != nil || !s.runVisible(tenantOf(r).ID, m) {
 			fail(w, 404, "not_found", "演化不存在")
 			return
 		}
@@ -708,17 +733,20 @@ type inMsg struct {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	t, ok := s.P.Authenticate(apiKey(r))
-	if !ok {
-		http.Error(w, "unauthorized", 401)
-		return
+	t, _ := s.identify(r)
+	if t == nil {
+		if apiKey(r) != "" {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		t = guestTenant // 访客只能读公开内容(帧、格子详情)，收不到任何任务推送
 	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return
 	}
 	conn.SetReadLimit(1 << 20)
-	c := &client{conn: conn, tenant: t.ID, send: make(chan wsMsg, 64)}
+	c := &client{conn: conn, tenant: t.ID, ip: clientIP(r), send: make(chan wsMsg, 64)}
 	s.mu.Lock()
 	s.clients[c] = true
 	s.mu.Unlock()
@@ -791,7 +819,15 @@ func (s *Server) broadcast(tenant string, v any) {
 
 func (s *Server) canRead(tenant, run string) bool {
 	m, err := readRunMeta(filepath.Join(s.E.RunsDir, filepath.Base(run)))
-	return err == nil && (m.Tenant == tenant || m.Tenant == platform.PublicTenant)
+	return err == nil && s.runVisible(tenant, m)
+}
+
+// runVisible：自己的演化、公共演化，以及管理员设为公开示例的演化(访客也能看)。
+func (s *Server) runVisible(tenant string, m *store.RunMeta) bool {
+	if m.Tenant == platform.PublicTenant || s.P.Settings().IsFeatured(m.ID) {
+		return true
+	}
+	return tenant != guestTenant.ID && m.Tenant == tenant
 }
 
 func (s *Server) dispatch(c *client, m inMsg) {
@@ -820,6 +856,10 @@ func (s *Server) dispatch(c *client, m inMsg) {
 		binary.LittleEndian.PutUint32(out[4:], uint32(y))
 		c.send <- wsMsg{bin: true, data: append(out, b...)}
 	case "inspect":
+		if c.tenant == guestTenant.ID && !allow("inspect:"+c.ip, 30, time.Minute) {
+			errOut(fmt.Errorf("请求过于频繁，请稍后再试"))
+			return
+		}
 		var out any
 		if err := s.E.WithStateAt(m.Run, m.Year, func(st *sim.State) { out = inspectState(st, m.Year, m.Cell) }); err != nil {
 			errOut(err)

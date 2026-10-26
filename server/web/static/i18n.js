@@ -44,6 +44,8 @@ export function translateDOM(root = document.body) {
     const k = raw.trim();
     if (k && EN_DICT[k] !== undefined) n.nodeValue = raw.replace(k, EN_DICT[k]);
   }
+  const md = document.querySelector('meta[name="description"]');
+  if (md && EN_DICT[md.content.trim()] !== undefined) md.content = EN_DICT[md.content.trim()];
   root.querySelectorAll('*').forEach((el) => {
     for (const a of ATTRS) {
       const v = el.getAttribute(a);

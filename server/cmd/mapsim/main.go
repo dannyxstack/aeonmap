@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -60,6 +61,11 @@ func main() {
 	}
 	if *dataDir == "" {
 		*dataDir = filepath.Join(r, "data")
+	}
+	for _, d := range []string{*dataDir, filepath.Join(r, "cache")} {
+		if err := checkWritable(d); err != nil {
+			log.Fatal(err)
+		}
 	}
 	store, err := platform.Open(*dataDir)
 	if err != nil {
@@ -122,8 +128,19 @@ func main() {
 			}
 		}
 	case "serve":
-		bootstrapLocalTenant(store, *dataDir, *addr)
+		if os.Getenv("MAPSIM_LOCAL_TENANT") == "off" {
+			revokeLocalKey(store, *dataDir) // 生产环境：不建本地租户密钥，已有的吊销
+		} else {
+			bootstrapLocalTenant(store, *dataDir, *addr)
+		}
 		runner.Start(ctx)
+		if os.Getenv("MAPSIM_BACKUP") != "off" {
+			bc := platform.BackupConfig{Dir: envOr("MAPSIM_BACKUP_DIR", filepath.Join(*dataDir, "backups")),
+				Every: time.Duration(envInt("MAPSIM_BACKUP_HOURS", 24)) * time.Hour, Keep: envInt("MAPSIM_BACKUP_KEEP", 7),
+				Exclude: []string{"exports"}}
+			log.Printf("自动备份：每 %v 一份，保留 %d 份，目录 %s", bc.Every, bc.Keep, bc.Dir)
+			go store.RunBackups(ctx, bc)
+		}
 		spec, _ := os.ReadFile(filepath.Join(r, "docs", "openapi.yaml"))
 		srv := api.NewServer(eng, runner, store, web.FS(), spec)
 		tok, created, err := store.AdminToken()
@@ -294,4 +311,30 @@ func findRoot(explicit string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("找不到项目根目录(需要包含 prep/main.py)，请用 -root 指定")
+}
+
+func envInt(k string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(k)); err == nil && v > 0 {
+		return v
+	}
+	return def
+}
+
+// revokeLocalKey：MAPSIM_LOCAL_TENANT=off 时，吊销 data/local.key 里的密钥并删除该文件。
+// 本地租户及其世界保留：在管理后台给它填上你的邮箱后，用邮箱登录即可继续使用。
+func revokeLocalKey(store *platform.Store, dataDir string) {
+	keyFile := filepath.Join(dataDir, "local.key")
+	b, err := os.ReadFile(keyFile)
+	if err != nil {
+		return
+	}
+	key := strings.TrimSpace(string(b))
+	if t, ok := store.Authenticate(key); ok && len(key) >= 10 {
+		if err := store.RevokeKey(t.ID, key[:10]); err != nil {
+			log.Printf("吊销本地密钥失败: %v", err)
+			return
+		}
+		log.Printf("MAPSIM_LOCAL_TENANT=off：已吊销本地租户 %s 的密钥 %s…", t.ID, key[:10])
+	}
+	os.Remove(keyFile)
 }

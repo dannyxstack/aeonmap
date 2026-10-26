@@ -116,6 +116,9 @@ func (r *Runner) Submit(t *platform.Tenant, worldID string, req *JobRequest) (*p
 	est := r.estimate(w, req)
 	r.submitMu.Lock()
 	defer r.submitMu.Unlock() // 额度检查与登记任务必须原子，避免并发提交同时通过
+	if n, lim := r.P.ActiveJobs(t.ID), plan.ActiveLimit(); n >= lim {
+		return nil, &busyError{fmt.Errorf("同时进行中的任务已达上限(%d 个，套餐 %s)，请等前面的任务完成", lim, plan.Name)}
+	}
 	if err := r.P.CheckQuota(t.ID, est); err != nil {
 		return nil, &quotaError{err}
 	}
@@ -133,6 +136,8 @@ func (r *Runner) Submit(t *platform.Tenant, worldID string, req *JobRequest) (*p
 type quotaError struct{ error }
 
 type planError struct{ error }
+
+type busyError struct{ error }
 
 // 算力点(系数可在管理后台配置)：预处理 = 陆地格/系数；演化 = 陆地格×年数/系数；导出 = 固定点数。
 func (r *Runner) prepUnits(land int) int {

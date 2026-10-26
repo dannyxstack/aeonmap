@@ -9,3 +9,4 @@ data/
 prep/tests/fixtures/
 .claude/
 *.whl
+.env

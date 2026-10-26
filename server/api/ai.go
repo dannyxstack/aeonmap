@@ -175,17 +175,24 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		fail(w, 402, "quota_exceeded", err.Error())
 		return
 	}
-	res, err := ai.Analyze(r.Context(), o, data)
-	if err != nil {
-		fail(w, 502, "ai_error", "识图失败："+err.Error())
+	ext := filepath.Ext(hdr.Filename)
+	task, ok := s.startTask(t.ID, "analyze", func(ctx context.Context) (any, error) {
+		res, err := ai.Analyze(ctx, o, data)
+		if err != nil {
+			return nil, &taskError{code: "ai_error", error: fmt.Errorf("识图失败：%w", err)}
+		}
+		s.P.Charge(t.ID, "", "ai", c.UnitsPerCall)
+		res.Raw = nil
+		if res.Input == "hypsometric" {
+			s.fuseBands(ctx, data, ext, res)
+		}
+		return res, nil
+	})
+	if !ok {
+		s.taskBusy(w)
 		return
 	}
-	s.P.Charge(t.ID, "", "ai", c.UnitsPerCall)
-	res.Raw = nil
-	if res.Input == "hypsometric" {
-		s.fuseBands(r.Context(), data, filepath.Ext(hdr.Filename), res)
-	}
-	writeJSON(w, 200, res)
+	s.respondTask(w, r, task)
 }
 
 // sampleSketch 生成一张示例手绘草图(左侧海、中间山脉、河流、高地)，用于测试连接。

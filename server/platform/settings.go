@@ -29,15 +29,26 @@ type Settings struct {
 	AllowSignup          bool            `json:"allowSignup"` // 开放自助注册(POST /v1/signup)
 	SignupPlan           string          `json:"signupPlan"`
 	AllowPrivateWebhooks bool            `json:"allowPrivateWebhooks"` // 允许回调到内网地址(仅本地开发)
+	FeaturedRuns         []string        `json:"featuredRuns,omitempty"` // 公开示例演化：未登录的访客也能回放
+}
+
+// IsFeatured：演化是否为公开示例。
+func (st Settings) IsFeatured(runID string) bool {
+	for _, r := range st.FeaturedRuns {
+		if r == runID {
+			return true
+		}
+	}
+	return false
 }
 
 func DefaultSettings() Settings {
 	return Settings{
 		Plans: map[string]Plan{
-			"free":     {Name: "free", Label: "免费版", MonthlyUnits: 100, MaxYears: 1000, MaxFamilies: 30000, MaxUploadMB: 20},
-			"pro":      {Name: "pro", Label: "专业版", MonthlyUnits: 2000, MaxYears: 10000, MaxFamilies: 100000, MaxUploadMB: 100, PriceMonthly: 99},
-			"studio":   {Name: "studio", Label: "工作室版", MonthlyUnits: 20000, MaxYears: 10000, MaxFamilies: 200000, MaxUploadMB: 500, PriceMonthly: 999},
-			"internal": {Name: "internal", Label: "内部", MonthlyUnits: -1, MaxYears: 100000, MaxFamilies: 200000, MaxUploadMB: 2000},
+			"free":     {Name: "free", Label: "免费版", MonthlyUnits: 100, MaxYears: 1000, MaxFamilies: 30000, MaxUploadMB: 20, MaxActive: 1},
+			"pro":      {Name: "pro", Label: "专业版", MonthlyUnits: 2000, MaxYears: 10000, MaxFamilies: 100000, MaxUploadMB: 100, PriceMonthly: 99, MaxActive: 3},
+			"studio":   {Name: "studio", Label: "工作室版", MonthlyUnits: 20000, MaxYears: 10000, MaxFamilies: 200000, MaxUploadMB: 500, PriceMonthly: 999, MaxActive: 5},
+			"internal": {Name: "internal", Label: "内部", MonthlyUnits: -1, MaxYears: 100000, MaxFamilies: 200000, MaxUploadMB: 2000, MaxActive: 10},
 		},
 		Pricing:    Pricing{PrepCellsPerUnit: 1e4, SimCellYearsPerUnit: 2e6, ExportUnits: 1},
 		Currency:   "CNY",
@@ -53,7 +64,7 @@ func (st *Settings) validate() error {
 		if k == "" || p.Name != k {
 			return fmt.Errorf("套餐键与 name 必须一致：%q", k)
 		}
-		if p.MonthlyUnits < -1 || p.MaxYears < 1 || p.MaxFamilies < 1000 || p.MaxUploadMB < 1 || p.PriceMonthly < 0 {
+		if p.MonthlyUnits < -1 || p.MaxYears < 1 || p.MaxFamilies < 1000 || p.MaxUploadMB < 1 || p.PriceMonthly < 0 || p.MaxActive < 0 {
 			return fmt.Errorf("套餐 %s 的数值无效(额度 -1 表示不限；年数≥1；家族≥1000；上传≥1MB；价格≥0)", k)
 		}
 	}

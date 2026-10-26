@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,10 +19,24 @@ import (
 	"mapsim/store"
 )
 
+var trustCF = os.Getenv("MAPSIM_TRUST_CF") == "1"
+
 // 管理后台接口 /admin/v1/*，使用独立的管理员令牌(data/admin.key 或环境变量 MAPSIM_ADMIN_TOKEN)。
 
 func (s *Server) adminAuth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if s.CFAccess != nil {
+			jwt := r.Header.Get("Cf-Access-Jwt-Assertion")
+			if jwt == "" {
+				if c, err := r.Cookie("CF_Authorization"); err == nil {
+					jwt = c.Value
+				}
+			}
+			if _, err := s.CFAccess.Verify(r.Context(), jwt); err != nil {
+				fail(w, 403, "forbidden", "管理后台需要通过 Cloudflare Access 验证："+err.Error())
+				return
+			}
+		}
 		tok := ""
 		if hdr := r.Header.Get("Authorization"); strings.HasPrefix(hdr, "Bearer ") {
 			tok = strings.TrimSpace(hdr[7:])
@@ -38,6 +54,12 @@ func (s *Server) adminAuth(h http.HandlerFunc) http.HandlerFunc {
 // clientIP 返回真实客户端地址。直连方是本机或内网(即反向代理，如 deploy/Caddyfile)时，
 // 取 X-Forwarded-For 最右一项(代理追加的那一项，客户端伪造不了)；公网直连时忽略该头。
 func clientIP(r *http.Request) string {
+	// 源站只经 Cloudflare 访问时(设置 MAPSIM_TRUST_CF=1)，真实地址在 CF-Connecting-IP
+	if trustCF {
+		if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); net.ParseIP(v) != nil {
+			return v
+		}
+	}
 	h, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		h = r.RemoteAddr
@@ -56,6 +78,7 @@ func clientIP(r *http.Request) string {
 func (s *Server) adminRoutes(mux *http.ServeMux) {
 	a := s.adminAuth
 	mux.HandleFunc("GET /admin/v1/overview", a(s.adminOverview))
+	mux.HandleFunc("GET /admin/v1/system", a(s.adminSystem))
 	mux.HandleFunc("GET /admin/v1/tenants", a(s.adminTenants))
 	mux.HandleFunc("POST /admin/v1/tenants", a(s.adminCreateTenant))
 	mux.HandleFunc("GET /admin/v1/tenants/{id}", a(s.adminTenant))
@@ -555,4 +578,28 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 
 func readAllLimit(w http.ResponseWriter, r *http.Request, n int64) ([]byte, error) {
 	return io.ReadAll(http.MaxBytesReader(w, r.Body, n))
+}
+
+// adminSystem：登录方式、安全与备份的配置状态(只读，来自环境变量)。
+func (s *Server) adminSystem(w http.ResponseWriter, r *http.Request) {
+	c := s.Auth
+	_, localKey := os.Stat(filepath.Join(s.P.Root, "local.key"))
+	backups := []string{}
+	dir := os.Getenv("MAPSIM_BACKUP_DIR")
+	if dir == "" {
+		dir = filepath.Join(s.P.Root, "backups")
+	}
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if e.IsDir() && len(e.Name()) == 15 {
+				backups = append(backups, e.Name())
+			}
+		}
+	}
+	writeJSON(w, 200, map[string]any{
+		"publicURL": c.PublicURL, "emailLogin": c.emailEnabled(), "smtpHost": c.SMTPHost, "googleLogin": c.googleEnabled(), "authDev": c.Dev,
+		"cfAccess": s.CFAccess != nil, "trustCF": trustCF, "localKeyFile": localKey == nil, "localTenantOff": os.Getenv("MAPSIM_LOCAL_TENANT") == "off",
+		"backupDir": dir, "backupOff": os.Getenv("MAPSIM_BACKUP") == "off", "backups": backups,
+		"operator": c.Operator, "contact": c.Contact,
+	})
 }

@@ -5,7 +5,8 @@ info:
   description: |
     上传地形(高程图或草图) → 推演气候、水文、资源、人口、政权历史与交通网络 → 以标准格式导出。
 
-    - 认证：`Authorization: Bearer msk_...`(也接受 `X-API-Key` 头；浏览器下载与 WebSocket 可用 `?key=`)
+    - 认证：`Authorization: Bearer msk_...`(也接受 `X-API-Key` 头；浏览器下载与 WebSocket 可用 `?key=`)。网页登录后使用会话 Cookie。
+    - 不带认证时以访客身份访问：只读接口(世界列表与文件、概况、单点、公开示例演化的回放数据)只返回公共内容，其余接口返回 401。
     - 所有耗时操作都是异步任务：提交后轮询 `GET /v1/jobs/{id}`，或在请求里给 `webhook` 等待回调。
     - 可复现：同一世界 + 同一引擎版本 + 同样参数/约束/种子 = 同样的历史；重复提交会直接复用已有结果，不再计费。
     - 计费单位"算力点"：预处理 = 陆地格/1万；演化 = 陆地格×年数/200万；导出 = 1。超出套餐额度返回 402。
@@ -185,7 +186,48 @@ paths:
         "429": {description: 注册过于频繁}
   /v1/me:
     get:
-      summary: 当前租户、套餐、本月用量、回调签名密钥
+      summary: 当前租户、套餐、本月用量、回调签名密钥；未登录时返回 {"guest":true}
+      security: []
+      responses: {"200": {description: OK}}
+    delete:
+      summary: 删除自己的账户(连同世界、演化与任务，不可恢复)
+      requestBody:
+        content: {application/json: {schema: {type: object, properties: {confirm: {type: string, description: 账户邮箱或 ID}}}}}
+      responses: {"200": {description: 已删除}, "400": {description: 确认信息不对}, "409": {description: 还有进行中的任务}}
+  /v1/keys:
+    post:
+      summary: 为自己新建一把接口密钥(只返回这一次)
+      responses: {"201": {description: '{key, prefix}'}}
+  /v1/keys/{prefix}:
+    delete:
+      parameters: [{name: prefix, in: path, required: true, schema: {type: string}}]
+      summary: 吊销自己的接口密钥
+      responses: {"200": {description: OK}}
+  /v1/tasks/{id}:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      summary: 查询短任务(AI 识图、色带识别)：status = running | succeeded | failed，成功时 result 为原同步接口的返回内容
+      responses: {"200": {description: OK}, "404": {description: 任务不存在或已过期(保留 1 小时)}}
+  /v1/site:
+    get:
+      summary: 站点公开信息：名称、运营方、联系邮箱、可购买的套餐、计价、可用的登录方式
+      security: []
+      responses: {"200": {description: OK}}
+  /v1/auth/email:
+    post:
+      summary: 发送邮箱登录链接(网页登录用，15 分钟有效、一次性；首次登录自动注册)
+      security: []
+      requestBody:
+        content: {application/json: {schema: {type: object, properties: {email: {type: string}, next: {type: string}, lang: {type: string, enum: [en, zh]}}}}}
+      responses: {"200": {description: 已发送}, "403": {description: 未开放注册}, "429": {description: 发送过于频繁}}
+  /v1/auth/google:
+    get:
+      summary: 跳转到 Google 登录(回调 /v1/auth/google/callback)
+      security: []
+      responses: {"303": {description: 跳转}}
+  /v1/auth/logout:
+    post:
+      summary: 退出网页登录(注销会话 Cookie)
       responses: {"200": {description: OK}}
   /v1/usage:
     get:
@@ -225,6 +267,7 @@ paths:
     post:
       summary: AI 识图：判断地图类型并读出图例色带、草图配色与经纬度范围(需管理员在后台启用)
       description: |
+        后台任务：返回 202 与任务(见 GET /v1/tasks/{id})；加 ?wait=1 时同步等待并直接返回结果。每人同时 1 个(否则 429 task_busy)。
         返回的 input、elevation、bounds 可直接填入 POST /v1/worlds 的同名字段；请让用户确认后再提交。
         颜色由服务端在模型指出的位置从原图取样，不依赖模型报出的色值。每次调用按管理后台设置扣算力点。
       requestBody:
@@ -263,6 +306,7 @@ paths:
     post:
       summary: 色带自动识别：分层设色图 → 每层颜色与海拔(不调用外部服务、不扣点)
       description: |
+        后台任务：返回 202 与任务(见 GET /v1/tasks/{id})；加 ?wait=1 时同步等待并直接返回结果。
         1. 颜色聚类 + 邻接拓扑排序：每层只与相邻两层接壤，按边界长度求出从低到高的链，贴海的一端为低；
            晕渲拆开的同一层、线条、文字、JPG 过渡色会被合并或剔除。
         2. 参考 DEM 校准(服务端装有 data/refdem/etopo.npz 且提供 bounds 时)：先按海岸线吻合度微调范围，
@@ -384,6 +428,7 @@ paths:
         "202": {description: 已排队, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}
         "400": {description: 参数错误}
         "402": {description: 额度不足}
+        "429": {description: 同时进行中的任务已达套餐上限(code too_many_jobs)}
         "403": {description: 套餐只含环境分析(noSimulate)，不能发起演化(code plan_restricted)}
   /v1/jobs:
     get:
