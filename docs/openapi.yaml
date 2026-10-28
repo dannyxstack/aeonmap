@@ -208,6 +208,13 @@ paths:
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       summary: 查询短任务(AI 识图、色带识别)：status = running | succeeded | failed，成功时 result 为原同步接口的返回内容
       responses: {"200": {description: OK}, "404": {description: 任务不存在或已过期(保留 1 小时)}}
+  /v1/version:
+    get:
+      summary: 当前运行的版本：提交号、源码指纹(Docker 构建)、构建时间、引擎/预处理/接口版本、启动时间
+      security: []
+      responses:
+        "200":
+          description: '{app, engineVersion, prepVersion, apiVersion, build: {commit, commitTime, dirty, sourceHash, buildTime, go, source}, startedAt, uptimeSec, builtinPrepKey}'
   /v1/site:
     get:
       summary: 站点公开信息：名称、运营方、联系邮箱、可购买的套餐、计价、可用的登录方式

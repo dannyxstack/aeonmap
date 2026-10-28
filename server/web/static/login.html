@@ -27,20 +27,12 @@
       <div class="or">或</div>
       <a class="btnlink full" id="googleBtn" href="/v1/auth/google">使用 Google 登录</a>
     </div>
-    <details style="margin-top:18px;font-size:13px" class="muted">
-      <summary>开发者：使用接口密钥</summary>
-      <form id="keyForm" style="margin-top:8px;display:flex;gap:6px">
-        <input name="k" placeholder="msk_..." style="flex:1;padding:6px 8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--text)">
-        <button>确定</button>
-      </form>
-    </details>
     <p class="muted" style="font-size:12px;margin-top:20px" id="agree"></p>
   </div>
 </main>
 <script type="module">
 import { initSite, $, esc, t } from './site.js';
 import { LANG } from './i18n.js';
-import { setKey, getMe } from './api.js';
 const q = new URLSearchParams(location.search);
 const next = q.get('next') || '/console.html';
 const { me, site } = await initSite();
@@ -70,12 +62,6 @@ $('emailForm').onsubmit = async (e) => {
   } catch (err) {
     $('err').innerHTML = `<div class="bad">${esc(err.message)}</div>`;
   } finally { $('sendBtn').disabled = false; }
-};
-$('keyForm').onsubmit = async (e) => {
-  e.preventDefault();
-  setKey(e.target.k.value.trim());
-  const m = await getMe().catch(() => ({ guest: true }));
-  if (m.guest) $('err').innerHTML = `<div class="bad">${t('密钥无效，请重新输入。')}</div>`; else location.replace(next);
 };
 </script>
 </body>

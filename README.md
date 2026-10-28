@@ -54,6 +54,16 @@ Docker：`docker compose up -d --build`(数据在 `./data`，预处理缓存在 
 - 管理后台：https://aeonmap.novakitestudio.com/admin.html
 - 接口文档：https://aeonmap.novakitestudio.com/v1/openapi.yaml
 
+### 查看运行的版本
+
+`GET /v1/version`(公开)返回提交号、源码指纹、构建时间、引擎/预处理/接口版本与启动时间；命令行 `./mapsim version` 输出同样的信息。Docker 镜像里没有 `.git`，构建时会对打包的源码算一个指纹；用下面的脚本可以把任一部署对应到本地的具体提交：
+
+```bash
+deploy/which-version.sh https://aeonmap.novakitestudio.com   # 或 http://127.0.0.1:8765
+```
+
+也可以构建时直接写入提交号：`GIT_COMMIT=$(git rev-parse HEAD) GIT_COMMIT_TIME=$(git log -1 --format=%cI) docker compose up -d --build`。
+
 ### 上线配置(登录、安全、备份)
 
 全部通过 `.env` 里的环境变量配置，管理后台"套餐与接口配置 → 登录与安全"可查看当前状态。

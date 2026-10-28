@@ -4,7 +4,12 @@
 #   本地密钥：首次启动自动创建，保存在 ./data/local.key
 services:
   mapsim:
-    build: .
+    build:
+      context: .
+      args:
+        # 可选：写进版本信息的提交号，例如 GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d --build
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        GIT_COMMIT_TIME: ${GIT_COMMIT_TIME:-}
     image: mapsim:latest
     # 以宿主机用户身份运行，./data 与 ./cache 里的文件归属不变。
     # bash 的 $UID 不会导出给 docker compose，请写进 .env：printf 'UID=%s\nGID=%s\n' $(id -u) $(id -g) > .env

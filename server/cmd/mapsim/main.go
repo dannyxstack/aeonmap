@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"mapsim/buildinfo"
 	"net/http"
 	"os"
 	"os/signal"
@@ -58,6 +59,12 @@ func main() {
 	r, err := findRoot(*root)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if cmd == "version" {
+		out := map[string]any{"engineVersion": sim.EngineVersion, "prepVersion": buildinfo.PrepVersion(r), "build": buildinfo.Load(r)}
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+		return
 	}
 	if *dataDir == "" {
 		*dataDir = filepath.Join(r, "data")
@@ -148,6 +155,7 @@ func main() {
 			log.Fatal(err)
 		}
 		srv.AdminToken = tok
+		srv.Root = r
 		srv.StartMaintenance(ctx)
 		if created {
 			log.Printf("已生成管理员令牌，保存在 %s(管理后台 /admin.html)", filepath.Join(*dataDir, "admin.key"))

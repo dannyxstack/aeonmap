@@ -10,3 +10,4 @@ docs/*.md
 data
 tests
 .env
+prep/tests/fixtures

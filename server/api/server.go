@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mapsim/buildinfo"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,6 +41,7 @@ type Server struct {
 	// AdminToken 管理后台令牌；为空时管理接口全部拒绝
 	AdminToken string
 	Auth       AuthConfig
+	Root       string    // 项目根目录(读取 build.json、预处理版本)
 	CFAccess   *CFAccess // 配置后，管理接口还要求 Cloudflare Access 签发的身份令牌
 	tasks      *taskStore
 
@@ -117,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "engineVersion": sim.EngineVersion})
 	})
+	mux.HandleFunc("GET /v1/version", s.handleVersion)
 	mux.HandleFunc("GET /v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 		w.Write(s.OpenAPI)
@@ -875,4 +878,19 @@ func (s *Server) dispatch(c *client, m inMsg) {
 			}()
 		}
 	}
+}
+
+// handleVersion：当前运行的版本(公开，不需要登录)。用 deploy/which-version.sh 可对应到具体提交。
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	bi := buildinfo.Load(s.Root)
+	out := map[string]any{
+		"app": s.Auth.SiteName, "engineVersion": sim.EngineVersion, "prepVersion": buildinfo.PrepVersion(s.Root),
+		"apiVersion": buildinfo.APIVersion(s.OpenAPI), "build": bi,
+		"startedAt": buildinfo.Started().Format(time.RFC3339), "uptimeSec": int(time.Since(buildinfo.Started()).Seconds()),
+	}
+	if wd, ok := s.P.World("eurasia"); ok {
+		out["builtinPrepKey"] = wd.PrepKey // 预处理缓存键：预处理代码或参数变了它就会变
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, out)
 }
