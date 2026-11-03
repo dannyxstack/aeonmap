@@ -3,7 +3,7 @@ body.site { display: block; overflow-y: auto; height: auto; min-height: 100%; }
 .site a { color: inherit; }
 .site .nav { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px; padding: 10px max(16px, calc((100vw - 1120px) / 2));
   background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-.site .nav .logo { font-weight: 700; font-size: 18px; letter-spacing: .5px; text-decoration: none; color: var(--accent); }
+.site .nav .logo { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: .5px; text-decoration: none; color: var(--accent); }
 .site .nav .links { display: flex; gap: 16px; font-size: 14px; }
 .site .nav .links a { text-decoration: none; color: var(--muted); }
 .site .nav .links a:hover { color: var(--text); }
@@ -68,3 +68,4 @@ html[lang="en"] .legal [lang="en"], html[lang="zh-CN"] .legal [lang="zh"] { disp
   .hero { grid-template-columns: 1fr; padding-top: 36px; }
   .site .nav .links { display: none; }
 }
+.site .nav .logo img { width: 28px; height: 26px; }

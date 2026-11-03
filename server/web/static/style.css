@@ -12,7 +12,8 @@ button:hover { filter: brightness(1.1); }
 select { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 body { display: grid; grid-template-rows: 44px 1fr auto; }
 #top { display: flex; align-items: center; gap: 16px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+.brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+.brand img { width: 22px; height: 20px; }
 .status { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }
 #main { display: grid; grid-template-columns: 230px 1fr auto; min-height: 0; }
