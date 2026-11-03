@@ -315,3 +315,37 @@ func TestAnonymousTrial(t *testing.T) {
 		t.Fatalf("expected 1 stale anonymous tenant, got %v", ids)
 	}
 }
+
+func TestAdminPath(t *testing.T) {
+	s, _ := testServer(t)
+	s.Static = fstest.MapFS{"admin.html": {Data: []byte(`<script src="admin.js"></script>`)}}
+	s.AdminToken = "mad_test_token_0123456789"
+	s.AdminPath = "m-secret123"
+	h := s.Handler()
+	do := func(method, path, tok string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, nil)
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("GET", "/m-secret123/", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "admin.js") {
+		t.Fatalf("入口页 %d", w.Code)
+	}
+	if w := do("GET", "/m-secret123", ""); w.Code != 302 {
+		t.Fatalf("入口无斜杠应跳转，得到 %d", w.Code)
+	}
+	if w := do("GET", "/m-secret123/v1/settings", s.AdminToken); w.Code != 200 {
+		t.Fatalf("入口下的管理接口 %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/m-secret123/v1/settings", ""); w.Code != 401 {
+		t.Fatalf("无令牌应 401，得到 %d", w.Code)
+	}
+	for _, p := range []string{"/admin.html", "/admin/v1/settings", "/admin/"} {
+		if w := do("GET", p, s.AdminToken); w.Code != 404 {
+			t.Fatalf("%s 应 404，得到 %d", p, w.Code)
+		}
+	}
+}

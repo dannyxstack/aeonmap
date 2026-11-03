@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -174,6 +175,27 @@ func (s *Store) AdminToken() (string, bool, error) {
 	rand.Read(b)
 	tok := "mad_" + hex.EncodeToString(b)
 	return tok, true, os.WriteFile(path, []byte(tok+"\n"), 0o600)
+}
+
+var adminPathRe = regexp.MustCompile(`^[A-Za-z0-9_-]{6,64}$`)
+
+// AdminPath 读取或生成管理后台入口路径(不含斜杠，后台在 /<路径>/)：环境变量 MAPSIM_ADMIN_PATH 优先，
+// 否则用 data/admin.path，都没有时随机生成并保存。
+func (s *Store) AdminPath() (string, bool, error) {
+	if v := strings.Trim(strings.TrimSpace(os.Getenv("MAPSIM_ADMIN_PATH")), "/"); v != "" {
+		if !adminPathRe.MatchString(v) {
+			return "", false, fmt.Errorf("MAPSIM_ADMIN_PATH 只能包含字母、数字、- 和 _，长度 6–64")
+		}
+		return v, false, nil
+	}
+	path := filepath.Join(s.Root, "admin.path")
+	if b, err := os.ReadFile(path); err == nil && adminPathRe.MatchString(strings.TrimSpace(string(b))) {
+		return strings.TrimSpace(string(b)), false, nil
+	}
+	b := make([]byte, 12)
+	rand.Read(b)
+	p := "m-" + hex.EncodeToString(b)
+	return p, true, os.WriteFile(path, []byte(p+"\n"), 0o600)
 }
 
 func TokenEqual(a, b string) bool {

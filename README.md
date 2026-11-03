@@ -51,7 +51,7 @@ Docker：`docker compose up -d --build`(数据在 `./data`，预处理缓存在 
 - 首页：https://aeonmap.novakitestudio.com/
 - 控制台：https://aeonmap.novakitestudio.com/console.html
 - 回放：https://aeonmap.novakitestudio.com/replay.html
-- 管理后台：https://aeonmap.novakitestudio.com/admin.html
+- 管理后台：https://aeonmap.novakitestudio.com/<入口路径>/ (入口路径见服务器 `data/admin.path` 或 `.env` 的 `MAPSIM_ADMIN_PATH`；`/admin.html` 不可用)
 - 接口文档：https://aeonmap.novakitestudio.com/v1/openapi.yaml
 
 ### 查看运行的版本
@@ -86,7 +86,7 @@ deploy/which-version.sh https://aeonmap.novakitestudio.com   # 或 http://127.0.
 
 **管理后台加 Cloudflare Access**(在 Cloudflare 控制台操作)：
 1. Zero Trust → Access → Applications → Add an application → Self-hosted。
-2. Application domain 填 `aeonmap.novakitestudio.com`，路径分别添加 `admin.html` 与 `admin/v1/*`(两条)。
+2. Application domain 填 `aeonmap.novakitestudio.com`，路径填 `<入口路径>/*`(入口路径即 `MAPSIM_ADMIN_PATH` 或 `data/admin.path` 的内容，页面与管理接口都在它下面)。改了入口路径要同步改这里，否则服务端校验不到 Cloudflare 身份令牌，后台会返回 403。
 3. Policy：Action = Allow，Include = Emails = 你的邮箱(登录方式选 One-time PIN 即可)。
 4. 保存后在应用的 Overview 里复制 Application Audience (AUD) Tag 填进 `MAPSIM_CF_ACCESS_AUD`；团队域名(Settings → Custom Pages 里的 `xxx.cloudflareaccess.com` 的 `xxx`)填进 `MAPSIM_CF_ACCESS_TEAM`。
 
@@ -169,7 +169,7 @@ curl -H "Authorization: Bearer $KEY" -F file=@map.jpg \
 
 ## 管理后台
 
-http://127.0.0.1:8765/admin.html，使用独立的管理员令牌(首次启动生成在 `data/admin.key`，或用环境变量 `MAPSIM_ADMIN_TOKEN` 指定)。
+入口是随机路径 http://127.0.0.1:8765/<入口路径>/：首次启动随机生成并保存在 `data/admin.path`(启动日志会打印)，也可用环境变量 `MAPSIM_ADMIN_PATH` 指定；固定的 `/admin.html`、`/admin/v1/*` 返回 404。后台使用独立的管理员令牌(首次启动生成在 `data/admin.key`，或用环境变量 `MAPSIM_ADMIN_TOKEN` 指定)。
 
 - **概览**：注册用户、付费用户、预估月收入、30 天活跃、本月算力点(按预处理/演化/导出)、24 小时任务与失败、存储占用；近 30 天用量、任务与注册趋势；用量前 10。
 - **用户**：搜索与筛选(套餐/付费/停用)；新建用户(密钥只显示一次)；改套餐、单独额度、备注；停用(密钥立即失效)；新增/吊销密钥；按月用量、最近任务、世界与演化；删除用户(连同数据)。
@@ -178,7 +178,7 @@ http://127.0.0.1:8765/admin.html，使用独立的管理员令牌(首次启动�
 - **AI 识图**：为 Claude、通义千问、豆包、智谱 GLM、Kimi、腾讯混元、文心(千帆)、硅基流动或任意 OpenAI 兼容接口(自建 vLLM/Ollama)分别填写接口地址、模型与 API Key，选定当前使用的一家；可用内置示例草图或自己的图直接测试。密钥单独保存在 `data/ai.json`(仅本机可读)，后台只显示首尾几位，审计日志不记录密钥。
 - **审计日志**：所有管理操作(含 IP 与配置变更前后内容)。
 
-管理接口在 `/admin/v1/*`(Bearer 管理员令牌)。开放自助注册后，用户可调用 `POST /v1/signup {"name","email"}` 获得接口密钥(每 IP 每小时 5 次)。
+管理接口在 `/<入口路径>/v1/*`(Bearer 管理员令牌)。开放自助注册后，用户可调用 `POST /v1/signup {"name","email"}` 获得接口密钥(每 IP 每小时 5 次)。
 
 ## 租户与套餐(命令行)
 

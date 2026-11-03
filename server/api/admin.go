@@ -21,7 +21,35 @@ import (
 
 var trustCF = os.Getenv("MAPSIM_TRUST_CF") == "1"
 
-// 管理后台接口 /admin/v1/*，使用独立的管理员令牌(data/admin.key 或环境变量 MAPSIM_ADMIN_TOKEN)。
+// 管理后台接口 /<入口>/v1/*，使用独立的管理员令牌(data/admin.key 或环境变量 MAPSIM_ADMIN_TOKEN)。
+// 入口路径是随机字符串(data/admin.path 或 MAPSIM_ADMIN_PATH)，固定的 /admin.html 与 /admin/v1 不再可用。
+
+// mountAdmin 把后台页面与接口挂到 /<AdminPath>/ 下。接口在内部仍按 /admin/v1/* 注册，转发时改写路径。
+func (s *Server) mountAdmin(mux *http.ServeMux) {
+	am := http.NewServeMux()
+	s.adminRoutes(am)
+	s.aiAdminRoutes(am)
+	p := "/" + s.AdminPath
+	if s.AdminPath == "" {
+		p = "/admin"
+	}
+	fwd := func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = "/admin" + strings.TrimPrefix(r.URL.Path, p)
+		r.URL.RawPath = ""
+		am.ServeHTTP(w, r)
+	}
+	for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+		mux.HandleFunc(m+" "+p+"/v1/", fwd)
+	}
+	mux.HandleFunc("GET "+p+"/{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		http.ServeFileFS(w, r, s.Static, "admin.html")
+	})
+	mux.HandleFunc("GET "+p, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, p+"/", http.StatusFound) })
+	mux.HandleFunc("GET /admin.html", http.NotFound) // 页面只从入口路径提供
+}
 
 func (s *Server) adminAuth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

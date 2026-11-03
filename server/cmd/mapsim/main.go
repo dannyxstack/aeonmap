@@ -155,10 +155,18 @@ func main() {
 			log.Fatal(err)
 		}
 		srv.AdminToken = tok
+		ap, apNew, err := store.AdminPath()
+		if err != nil {
+			log.Fatal(err)
+		}
+		srv.AdminPath = ap
+		if apNew {
+			log.Printf("已生成管理后台入口 /%s/，保存在 %s", ap, filepath.Join(*dataDir, "admin.path"))
+		}
 		srv.Root = r
 		srv.StartMaintenance(ctx)
 		if created {
-			log.Printf("已生成管理员令牌，保存在 %s(管理后台 /admin.html)", filepath.Join(*dataDir, "admin.key"))
+			log.Printf("已生成管理员令牌，保存在 %s", filepath.Join(*dataDir, "admin.key"))
 		}
 		hs := &http.Server{Addr: *addr, Handler: srv.Handler()}
 		go func() {

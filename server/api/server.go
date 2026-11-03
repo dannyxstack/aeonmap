@@ -40,6 +40,7 @@ type Server struct {
 	OpenAPI []byte
 	// AdminToken 管理后台令牌；为空时管理接口全部拒绝
 	AdminToken string
+	AdminPath  string // 管理后台入口：页面 /<AdminPath>/，接口 /<AdminPath>/v1/*；为空时用 admin
 	Auth       AuthConfig
 	Root       string    // 项目根目录(读取 build.json、预处理版本)
 	CFAccess   *CFAccess // 配置后，管理接口还要求 Cloudflare Access 签发的身份令牌
@@ -222,8 +223,8 @@ func (s *Server) Handler() http.Handler {
 	})))
 	mux.HandleFunc("GET /v1/exports/{id}", s.auth(s.handleExport))
 	mux.HandleFunc("GET /ws", s.handleWS)
-	s.adminRoutes(mux)
-	s.aiRoutes(mux)
+	s.mountAdmin(mux)
+	mux.HandleFunc("POST /v1/analyze", s.auth(s.handleAnalyze))
 	s.envRoutes(mux)
 	s.authRoutes(mux)
 	s.taskRoutes(mux)

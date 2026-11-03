@@ -37,14 +37,13 @@ func aiView(c platform.AIConfig) map[string]any {
 		"maxImagePx": c.MaxImagePx, "unitsPerCall": c.UnitsPerCall}
 }
 
-func (s *Server) aiRoutes(mux *http.ServeMux) {
+func (s *Server) aiAdminRoutes(mux *http.ServeMux) {
 	a := s.adminAuth
 	mux.HandleFunc("GET /admin/v1/ai", a(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"config": aiView(s.P.AIConfig()), "catalog": ai.Providers})
 	}))
 	mux.HandleFunc("PUT /admin/v1/ai", a(s.adminPutAI))
 	mux.HandleFunc("POST /admin/v1/ai/test", a(s.adminTestAI))
-	mux.HandleFunc("POST /v1/analyze", s.auth(s.handleAnalyze))
 }
 
 func (s *Server) adminPutAI(w http.ResponseWriter, r *http.Request) {

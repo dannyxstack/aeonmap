@@ -24,6 +24,7 @@ services:
     # 线上配置写在 .env 里(不入库)，未设置的项为空即不启用；说明见 README"上线配置"
     environment:
       MAPSIM_ADMIN_TOKEN: ${MAPSIM_ADMIN_TOKEN:-}
+      MAPSIM_ADMIN_PATH: ${MAPSIM_ADMIN_PATH:-}
       MAPSIM_PUBLIC_URL: ${MAPSIM_PUBLIC_URL:-}
       MAPSIM_LOCAL_TENANT: ${MAPSIM_LOCAL_TENANT:-}
       MAPSIM_TRUST_CF: ${MAPSIM_TRUST_CF:-}

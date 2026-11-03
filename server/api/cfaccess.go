@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// Cloudflare Access：在 Cloudflare Zero Trust 里给 /admin* 加访问策略后，Cloudflare 会在转发的请求里带上
+// Cloudflare Access：在 Cloudflare Zero Trust 里给后台入口路径(/<MAPSIM_ADMIN_PATH>/*)加访问策略后，Cloudflare 会在转发的请求里带上
 // Cf-Access-Jwt-Assertion(RS256 签名的身份令牌)。服务端校验它，即使有人绕过 Cloudflare 直连源站也进不了管理后台。
 //   MAPSIM_CF_ACCESS_TEAM  团队域名前缀，如 novakite(即 https://novakite.cloudflareaccess.com)
 //   MAPSIM_CF_ACCESS_AUD   该 Access 应用的 Application Audience (AUD) Tag

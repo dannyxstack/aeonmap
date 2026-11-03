@@ -10,6 +10,7 @@ const L = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, t(v)])
 const STATUS = L({ queued: '排队', running: '运行中', succeeded: '完成', failed: '失败', cancelled: '已取消' });
 const planLabel = (p, k) => tr(p?.label || k); // 默认套餐名(免费版/专业版…)可翻译；管理员改过的显示原样
 const TOKEN = 'mapsim.adminToken';
+const ADMIN = location.pathname.replace(/\/+$/, ''); // 后台入口(随机路径)，接口在 <入口>/v1/*
 
 let token = '';
 try { token = localStorage.getItem(TOKEN) || ''; } catch { /* 忽略 */ }
@@ -63,7 +64,7 @@ function stackedBars(series, keys, colors) {
 }
 
 async function renderOverview() {
-  const o = await api('/admin/v1/overview?days=30');
+  const o = await api(ADMIN + '/v1/overview?days=30');
   $('gen').textContent = t('更新于 {0}', fmtT(o.generated));
   const tn = o.tenants;
   const plans = S.settings?.plans || {};
@@ -98,7 +99,7 @@ async function renderOverview() {
 
 // ---------------- 用户 ----------------
 async function renderTenants() {
-  S.tenants = await api('/admin/v1/tenants');
+  S.tenants = await api(ADMIN + '/v1/tenants');
   const plans = S.settings.plans;
   const sec = $('tab-tenants');
   if (!sec.dataset.init) {
@@ -138,7 +139,7 @@ function drawTenants() {
 }
 
 async function openTenant(id) {
-  const d = await api(`/admin/v1/tenants/${id}`);
+  const d = await api(`${ADMIN}/v1/tenants/${id}`);
   const tn = d.tenant;
   const plans = S.settings.plans;
   const months = Object.entries(d.usageByMonth).sort().slice(-12);
@@ -173,22 +174,22 @@ async function openTenant(id) {
     const f = e.target;
     const patch = { name: f.name.value, email: f.email.value, plan: f.plan.value, note: f.note.value, suspended: f.suspended.checked,
       quotaOverride: f.quota.value === '' ? -2 : parseInt(f.quota.value, 10) };
-    try { await api(`/admin/v1/tenants/${id}`, { method: 'PATCH', body: patch }); $('tenantDlg').close(); refresh(); } catch (err) { alert(err.message); }
+    try { await api(`${ADMIN}/v1/tenants/${id}`, { method: 'PATCH', body: patch }); $('tenantDlg').close(); refresh(); } catch (err) { alert(err.message); }
   };
   $('tdDelete').onclick = async () => {
     const typed = prompt(t('删除用户「{0}」及其全部世界、演化与任务，不可恢复。\n请输入用户名称确认：', tn.name));
     if (typed !== tn.name) return;
-    try { await api(`/admin/v1/tenants/${id}`, { method: 'DELETE' }); $('tenantDlg').close(); refresh(); } catch (err) { alert(err.message); }
+    try { await api(`${ADMIN}/v1/tenants/${id}`, { method: 'DELETE' }); $('tenantDlg').close(); refresh(); } catch (err) { alert(err.message); }
   };
   $('tdAddKey').onclick = async () => {
     if (!confirm(t('为该用户新增一把接口密钥？'))) return;
-    const r = await api(`/admin/v1/tenants/${id}/keys`, { method: 'POST' });
+    const r = await api(`${ADMIN}/v1/tenants/${id}/keys`, { method: 'POST' });
     await openTenant(id);
     $('newKeyBox').innerHTML = `<div class="newkey">${t('新密钥(只显示这一次，请转交用户)：')}<br><code>${esc(r.key)}</code></div>`;
   };
   $('tenantBody').querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
     if (!confirm(t('吊销密钥 {0}…？使用它的程序会立即失败。', b.dataset.revoke))) return;
-    await api(`/admin/v1/tenants/${id}/keys/${b.dataset.revoke}`, { method: 'DELETE' });
+    await api(`${ADMIN}/v1/tenants/${id}/keys/${b.dataset.revoke}`, { method: 'DELETE' });
     openTenant(id);
   });
   if (!$('tenantDlg').open) $('tenantDlg').showModal();
@@ -204,7 +205,7 @@ function openNewTenant() {
 async function createTenant() {
   const f = $('newTenantForm');
   try {
-    const r = await api('/admin/v1/tenants', { method: 'POST', body: { name: f.name.value, email: f.email.value, plan: f.plan.value, note: f.note.value } });
+    const r = await api(ADMIN + '/v1/tenants', { method: 'POST', body: { name: f.name.value, email: f.email.value, plan: f.plan.value, note: f.note.value } });
     f.reset();
     await refresh();
     await openTenant(r.tenant.id);
@@ -228,7 +229,7 @@ async function renderJobs() {
   sel.innerHTML = `<option value="">${t('全部用户')}</option>` + S.tenants.map((x) => `<option value="${x.id}">${esc(tr(x.name))}</option>`).join('');
   sel.value = cur;
   const q = new URLSearchParams({ status: $('jstatus').value, tenant: sel.value, limit: 300 });
-  const jobs = await api('/admin/v1/jobs?' + q);
+  const jobs = await api(ADMIN + '/v1/jobs?' + q);
   $('jtable').querySelector('tbody').innerHTML = jobs.map((j) => {
     const req = j.request || {};
     const what = [req.simulate ? t('演化 {0}年', req.simulate.years || '') : '', req.export ? t('导出') : '', !req.simulate && !req.export ? t('预处理') : ''].filter(Boolean).join(' + ');
@@ -238,7 +239,7 @@ async function renderJobs() {
       <td>${j.status === 'running' || j.status === 'queued' ? `<button class="ghost" data-cancel="${j.id}">${t('取消')}</button>` : ''}</td></tr>`;
   }).join('') || `<tr><td colspan="6" class="muted">${t('没有任务')}</td></tr>`;
   $('jtable').querySelectorAll('[data-cancel]').forEach((b) => b.onclick = async () => {
-    try { await api(`/admin/v1/jobs/${b.dataset.cancel}`, { method: 'DELETE' }); setTimeout(renderJobs, 800); } catch (e) { alert(e.message); }
+    try { await api(`${ADMIN}/v1/jobs/${b.dataset.cancel}`, { method: 'DELETE' }); setTimeout(renderJobs, 800); } catch (e) { alert(e.message); }
   });
 }
 
@@ -291,7 +292,7 @@ function renderSettings() {
 // 登录方式、安全与备份(只读：在服务器的环境变量里配置)
 async function renderSystem() {
   let y;
-  try { y = await api('/admin/v1/system'); } catch { return; }
+  try { y = await api(ADMIN + '/v1/system'); } catch { return; }
   y.backups = y.backups || [];
   const ok = (b) => (b ? `<span style="color:#7fd6a0">${t('已启用')}</span>` : `<span class="muted">${t('未配置')}</span>`);
   $('sysPanel').innerHTML = `<h2 style="margin-top:0">${t('登录与安全')} <span class="muted">${t('只读，在服务器的环境变量里配置(见 README)')}</span></h2>
@@ -332,7 +333,7 @@ async function saveSettings() {
   st.anonMaxAgeDays = Number($('pAnonDays').value) || 0;
   st.featuredRuns = $('pFeatured').value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
   try {
-    S.settings = await api('/admin/v1/settings', { method: 'PUT', body: st });
+    S.settings = await api(ADMIN + '/v1/settings', { method: 'PUT', body: st });
     renderSettings();
     $('saveMsg').textContent = t('已保存，立即生效');
   } catch (e) { $('saveMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
@@ -342,7 +343,7 @@ async function saveSettings() {
 const INPUTS = L({ sketch: '手绘草图', hypsometric: '分层设色地形图', grayscale: '灰度高程图', unknown: '无法判断' });
 
 async function renderAI() {
-  const { config: c, catalog } = await api('/admin/v1/ai');
+  const { config: c, catalog } = await api(ADMIN + '/v1/ai');
   S.ai = { c, catalog };
   const opt = (p) => `<option value="${p.id}" ${p.id === c.active ? 'selected' : ''}>${esc(tr(p.label))}</option>`;
   const card = (p) => {
@@ -400,7 +401,7 @@ async function saveAI() {
   const body = { enabled: $('aiEnabled').checked, active: $('aiActive').value, providers, clearKeys,
     timeoutSec: Number($('aiTimeout').value), maxImagePx: Number($('aiMaxPx').value), unitsPerCall: Number($('aiUnits').value) };
   try {
-    const r = await api('/admin/v1/ai', { method: 'PUT', body });
+    const r = await api(ADMIN + '/v1/ai', { method: 'PUT', body });
     await renderAI();
     $('aiMsg').innerHTML = r.warning ? `<span class="err">${esc(tr(r.warning))}</span>` : t('已保存，立即生效');
   } catch (e) { $('aiMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
@@ -419,7 +420,7 @@ async function testAI(id, file) {
   msg.textContent = t('识别中：{0}…(可能需要几十秒)', file ? file.name : t('示例草图'));
   out.innerHTML = '';
   try {
-    const r = await fetch('/admin/v1/ai/test', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+    const r = await fetch(ADMIN + '/v1/ai/test', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(tr(d.error?.message) || `HTTP ${r.status}`);
     msg.innerHTML = `<span style="color:#8c8">${t('连接正常')}</span> · ${esc(d.model)} · ${t('{0} 秒 · {1} 次调用，输入 {2} / 输出 {3} tokens', d.elapsedSec, d.usage.calls, fmtN(d.usage.inputTokens), fmtN(d.usage.outputTokens))}`;
@@ -442,7 +443,7 @@ async function testAI(id, file) {
 // ---------------- 审计 ----------------
 const ACTIONS = L({ 'tenant.create': '新建用户', 'tenant.update': '修改用户', 'tenant.signup': '自助注册', 'key.add': '新增密钥', 'key.revoke': '吊销密钥', 'settings.update': '修改配置', 'job.cancel': '取消任务', 'tenant.delete': '删除用户', 'ai.update': '修改 AI 配置', 'ai.test': '测试 AI 识图', 'tenant.self_delete': '自助删除账户', 'tenant.anonymous': '开试用账户', 'tenant.claim': '试用账户转正' });
 async function renderAudit() {
-  const rows = await api('/admin/v1/audit');
+  const rows = await api(ADMIN + '/v1/audit');
   $('tab-audit').innerHTML = `<div class="panel"><table class="jobs"><thead><tr><th>${t('时间')}</th><th>${t('操作')}</th><th>${t('对象')}</th><th>${t('详情')}</th><th>IP</th></tr></thead><tbody>
     ${rows.map((a) => `<tr><td>${fmtT(a.time)}</td><td>${esc(ACTIONS[a.action] || a.action)}</td><td>${esc(a.target || '')}</td>
       <td class="muted" style="max-width:520px;word-break:break-all">${esc(a.action === 'settings.update' ? t('套餐/计价/接口配置变更') : JSON.stringify(a.detail || {}))}</td><td>${esc(a.ip || '')}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">${t('暂无记录')}</td></tr>`}</tbody></table></div>`;
@@ -458,7 +459,7 @@ async function showTab(tab) {
 
 async function refresh() {
   try {
-    S.settings = await api('/admin/v1/settings');
+    S.settings = await api(ADMIN + '/v1/settings');
     if (S.tab === 'overview') await renderOverview();
     if (S.tab === 'tenants' || S.tab === 'jobs') await renderTenants();
     if (S.tab === 'jobs') await renderJobs();
