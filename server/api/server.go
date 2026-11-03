@@ -108,13 +108,19 @@ func apiKey(r *http.Request) string {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.FileServer(http.FS(s.Static)))
+	// 嵌入的静态文件没有修改时间，浏览器可能沿用旧缓存，升级后出现新 HTML 配旧 CSS；要求每次回源
+	static := http.FileServer(http.FS(s.Static))
+	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		static.ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		// 回放页原来是 /index.html(文件服务会把它规范成 /)：旧链接 /?run=… /?world=… 转到 /replay.html
 		if q := r.URL.Query(); q.Get("run") != "" || q.Get("world") != "" {
 			http.Redirect(w, r, "/replay.html?"+r.URL.RawQuery, http.StatusFound)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFileFS(w, r, s.Static, "home.html") // 首页
 	})
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
